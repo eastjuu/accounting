@@ -7,14 +7,14 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="가계부">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14171d" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="icon" type="image/png" href="icon-512.png">
 <title>가계부</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #f4f5f7; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  html, body { margin: 0; height: 100%; background: #f2f2f7; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
   @media (prefers-color-scheme: dark) { html, body { background: #14171d; color: #e6e8ec; } }
   #app { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; bottom: 0; width: 100%; height: calc(100% - env(safe-area-inset-top)); border: 0; }
   #setup { max-width: 420px; margin: 0 auto; padding: calc(40px + env(safe-area-inset-top)) 20px 40px; }
@@ -24,6 +24,14 @@
   #setup label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
   #setup input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color: #111; }
   #setup button { width: 100%; margin-top: 22px; padding: 13px; font-size: 16px; font-weight: 600; border: 0; border-radius: 12px; background: #2f6fde; color: #fff; }
+  /* 시작 화면: 앱 화면이 준비될 때까지 구글 로딩 화면을 가려요 */
+  #splash { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #f2f2f7; transition: opacity .3s ease; }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash img { width: 84px; height: 84px; border-radius: 19px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+  #splash b { font-size: 17px; font-weight: 600; color: #1b1f27; }
+  #splash svg { width: 22px; height: 22px; color: #8e8e93; margin-top: 18px; animation: sp .8s steps(8) infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (prefers-color-scheme: dark) { #splash { background: #14171d; } #splash b { color: #e6e8ec; } }
   #msg { color: #c62828; font-size: 13px; text-align: center; margin-top: 12px; min-height: 1em; }
 </style>
 </head>
@@ -41,23 +49,34 @@
   <div id="msg"></div>
 </div>
 <iframe id="app" hidden title="가계부" allow="clipboard-write"></iframe>
- 
+<div id="splash" hidden>
+  <img src="icon.png" alt="">
+  <b>가계부</b>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><rect x="11" y="1.5" width="2" height="6" rx="1"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".85" transform="rotate(45 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".7" transform="rotate(90 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".6" transform="rotate(135 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".5" transform="rotate(180 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".4" transform="rotate(225 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".3" transform="rotate(270 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".2" transform="rotate(315 12 12)"/></g></svg>
+</div>
+
 <script>
   var STORE = 'ledger-app-settings';
   function read() { try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { return null; } }
   function write(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); return true; } catch (e) { return false; } }
- 
+
   // 주소 끝에 #reset 을 붙여 열면 저장된 설정을 지우고 다시 입력할 수 있어요
   if (location.hash === '#reset') {
     try { localStorage.removeItem(STORE); } catch (e) {}
     history.replaceState(null, '', location.pathname);
   }
- 
+
   var cfg = read();
   if (cfg && cfg.url && cfg.key) {
     var f = document.getElementById('app');
     f.src = cfg.url + (cfg.url.indexOf('?') < 0 ? '?' : '&') + 'k=' + encodeURIComponent(cfg.key);
     f.hidden = false;
+    // 시작 화면: 앱이 "준비됨" 신호를 보내면 걷어요. 신호가 없어도 10초 뒤에는 걷어요(잠긴 페이지·오류 화면이 보이도록).
+    var sp = document.getElementById('splash');
+    sp.hidden = false;
+    var hide = function () { sp.classList.add('hide'); setTimeout(function () { sp.hidden = true; }, 350); };
+    window.addEventListener('message', function (ev) { if (ev.data && ev.data.type === 'ledger-ready') hide(); });
+    setTimeout(hide, 10000);
   } else {
     document.getElementById('setup').hidden = false;
     document.getElementById('save').addEventListener('click', function () {
@@ -73,4 +92,3 @@
 </script>
 </body>
 </html>
- 
