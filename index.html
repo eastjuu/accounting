@@ -27,6 +27,7 @@
   /* 시작 화면: 앱 화면이 준비될 때까지 구글 로딩 화면을 가려요 */
   #splash { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #f3f4f6; transition: opacity .3s ease; }
   #splash.hide { opacity: 0; pointer-events: none; }
+  #splash[hidden] { display: none; }
   #splash img { width: 84px; height: 84px; border-radius: 19px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
   #splash b { font-size: 17px; font-weight: 700; color: #111214; letter-spacing: -.02em; }
   #splash svg { width: 22px; height: 22px; color: #8e8e93; margin-top: 18px; animation: sp .8s steps(8) infinite; }
