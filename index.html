@@ -32,7 +32,7 @@
   /* ===== 시작 화면: 앱 홈과 같은 틀을 먼저 보여주고, 앱이 준비되면 부드럽게 넘겨요 ===== */
   :root { --bg:#f3f4f6; --panel:#fff; --fg:#111214; --muted:#8b9099; --line:#e7e8eb; --accent:#f0712c; --fill:#eceef1; --bar:#d9dce1; --tab-on:#eceef1; --shadow:0 1px 2px rgba(17,18,20,.03),0 8px 24px rgba(17,18,20,.05); }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --panel:#1d2027; --fg:#f2f3f5; --muted:#8b919b; --line:#2a2e36; --accent:#ff8a4c; --fill:#262a32; --bar:#3a3f49; --tab-on:#2b2f37; --shadow:none; } }
-  #splash { position: fixed; inset: 0; z-index: 10; background: var(--bg); color: var(--fg); transition: opacity .35s ease; letter-spacing: -.01em; }
+  #splash { position: fixed; inset: 0; z-index: 10; background: var(--bg); color: var(--fg); transition: opacity .5s ease; letter-spacing: -.01em; }
   #splash.hide { opacity: 0; pointer-events: none; }
   #splash[hidden] { display: none; }
   .sp-m { position: absolute; top: env(safe-area-inset-top); left: 0; right: 0; bottom: 0; padding: 12px 16px 0; overflow: hidden; }
@@ -127,8 +127,9 @@
   function write(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); return true; } catch (e) { return false; } }
 
   // 주소 끝에 #reset 을 붙여 열면 저장된 설정을 지우고 다시 입력할 수 있어요
+  var DATA = 'ledger-data-cache';
   if (location.hash === '#reset') {
-    try { localStorage.removeItem(STORE); } catch (e) {}
+    try { localStorage.removeItem(STORE); localStorage.removeItem(DATA); } catch (e) {}
     history.replaceState(null, '', location.pathname);
   }
 
@@ -143,9 +144,21 @@
     document.getElementById('spDate').textContent = mo + ' ' + now.getDate() + '일 ' + '일월화수목금토'.charAt(now.getDay()) + '요일';
     [].forEach.call(document.querySelectorAll('.spMo'), function (el) { el.textContent = mo; });
     sp.hidden = false;
-    var hide = function () { if (sp.hidden || sp.classList.contains('hide')) return; sp.classList.add('hide'); setTimeout(function () { sp.hidden = true; }, 400); };
-    window.addEventListener('message', function (ev) { if (ev.data && ev.data.type === 'ledger-ready') hide(); });
-    setTimeout(hide, 10000);
+    var hide = function () { if (sp.hidden || sp.classList.contains('hide')) return; sp.classList.add('hide'); setTimeout(function () { sp.hidden = true; }, 550); };
+    // 앱 화면(구글 주소)과 주고받기: 준비됨 → 시작 화면 걷기 / 저장 → 마지막 데이터 보관 / 인사 → 보관한 데이터 건네기
+    var appOrigin = ''; try { appOrigin = new URL(cfg.url).origin; } catch (e) {}
+    var trusted = function (o) { return /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com$/.test(o) || o === 'https://script.google.com' || o === appOrigin; };
+    window.addEventListener('message', function (ev) {
+      var d = ev.data;
+      if (!d || !trusted(ev.origin)) return;
+      if (d.type === 'ledger-ready') hide();
+      else if (d.type === 'ledger-save' && d.raw) { try { localStorage.setItem(DATA, JSON.stringify(d.raw)); } catch (e) {} }
+      else if (d.type === 'ledger-hello') {
+        var raw = null; try { raw = JSON.parse(localStorage.getItem(DATA) || 'null'); } catch (e) {}
+        if (raw && ev.source) ev.source.postMessage({ type: 'ledger-cache', raw: raw }, ev.origin);
+      }
+    });
+    setTimeout(hide, 15000);   // 신호가 끝내 없으면(잠긴 페이지·오류) 15초 뒤에 걷어요
   } else {
     document.getElementById('setup').hidden = false;
     document.getElementById('save').addEventListener('click', function () {
