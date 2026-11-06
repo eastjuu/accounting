@@ -13,8 +13,13 @@
 <link rel="apple-touch-icon" href="icon.png?v=2">
 <link rel="icon" type="image/png" href="icon-512.png?v=2">
 <title>가계부</title>
+<!-- 구글 서버·글꼴 서버와 미리 연결해 두어 첫 로딩을 조금이라도 줄여요 -->
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
-  html, body { margin: 0; height: 100%; background: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  html, body { margin: 0; height: 100%; background: #f3f4f6; font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
   @media (prefers-color-scheme: dark) { html, body { background: #14171d; color: #e6e8ec; } }
   #app { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; bottom: 0; width: 100%; height: calc(100% - env(safe-area-inset-top)); border: 0; }
   #setup { max-width: 420px; margin: 0 auto; padding: calc(40px + env(safe-area-inset-top)) 20px 40px; }
@@ -24,15 +29,64 @@
   #setup label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
   #setup input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 15px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color: #111; }
   #setup button { width: 100%; margin-top: 22px; padding: 13px; font-size: 16px; font-weight: 600; border: 0; border-radius: 14px; background: #111214; color: #fff; }
-  /* 시작 화면: 앱 화면이 준비될 때까지 구글 로딩 화면을 가려요 */
-  #splash { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #f3f4f6; transition: opacity .3s ease; }
+  /* ===== 시작 화면: 앱 홈과 같은 틀을 먼저 보여주고, 앱이 준비되면 부드럽게 넘겨요 ===== */
+  :root { --bg:#f3f4f6; --panel:#fff; --fg:#111214; --muted:#8b9099; --line:#e7e8eb; --accent:#f0712c; --fill:#eceef1; --bar:#d9dce1; --tab-on:#eceef1; --shadow:0 1px 2px rgba(17,18,20,.03),0 8px 24px rgba(17,18,20,.05); }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171d; --panel:#1d2027; --fg:#f2f3f5; --muted:#8b919b; --line:#2a2e36; --accent:#ff8a4c; --fill:#262a32; --bar:#3a3f49; --tab-on:#2b2f37; --shadow:none; } }
+  #splash { position: fixed; inset: 0; z-index: 10; background: var(--bg); color: var(--fg); transition: opacity .35s ease; letter-spacing: -.01em; }
   #splash.hide { opacity: 0; pointer-events: none; }
   #splash[hidden] { display: none; }
-  #splash img { width: 84px; height: 84px; border-radius: 19px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
-  #splash b { font-size: 17px; font-weight: 700; color: #111214; letter-spacing: -.02em; }
-  #splash svg { width: 22px; height: 22px; color: #8e8e93; margin-top: 18px; animation: sp .8s steps(8) infinite; }
-  @keyframes sp { to { transform: rotate(360deg); } }
-  @media (prefers-color-scheme: dark) { #splash { background: #14171d; } #splash b { color: #e6e8ec; } }
+  .sp-m { position: absolute; top: env(safe-area-inset-top); left: 0; right: 0; bottom: 0; padding: 12px 16px 0; overflow: hidden; }
+  .sp-pc { display: none; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  @media (min-width: 861px) { .sp-m { display: none; } .sp-pc { display: flex; } }
+  .sp-top { display: flex; align-items: center; gap: 8px; }
+  .sp-top .gap { flex: 1; }
+  .sp-mb { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); font-size: 16px; font-weight: 700; letter-spacing: -.02em; box-sizing: border-box; }
+  .sp-mb svg { width: 11px; height: 11px; color: var(--muted); }
+  .sp-sq { width: 40px; height: 40px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; box-sizing: border-box; }
+  .sp-sq svg { width: 20px; height: 20px; }
+  .sp-main { padding: 22px 4px 4px; margin-top: 14px; }
+  .sp-d { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .sk { display: block; height: 18px; border-radius: 7px; background: linear-gradient(90deg, var(--fill) 30%, color-mix(in srgb, var(--fill) 35%, transparent) 50%, var(--fill) 70%); background-size: 300% 100%; animation: shimmer 1.3s ease-in-out infinite; }
+  .sp-g2 { font-size: 22px; line-height: 1.35; margin-top: 4px; }
+  .sp-msg { font-size: 16px; line-height: 1.45; margin: 4px 0 26px; }
+  .sp-g2 .sk, .sp-msg .sk { display: inline-block; height: .8em; vertical-align: middle; }
+  @keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  .sp-lab { font-size: 15px; color: var(--muted); font-weight: 500; }
+  .sp-num { font-size: 58px; font-weight: 700; letter-spacing: -.055em; line-height: 1.08; margin-top: 4px; }
+  .sp-num small { font-size: 28px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .sp-cmp { font-size: 14px; color: var(--muted); margin-top: 10px; }
+  .sp-chart { height: 150px; margin: 24px 0 37px; }
+  .sp-chart svg, .sp-pc svg.mini { width: 100%; height: 100%; display: block; overflow: visible; }
+  /* 그래프가 그려지는 애니메이션 (막대가 자라고 → 선이 그어지고 → 점이 찍혀요) */
+  .an .b { fill: var(--bar); transform-box: fill-box; transform-origin: 50% 100%; animation: grow 2.4s cubic-bezier(.2,.8,.2,1) infinite; }
+  .an .b.on { fill: var(--accent); }
+  .an .ln { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 520; stroke-dashoffset: 520; animation: draw 2.4s ease-in-out infinite; }
+  .an .dt { fill: var(--accent); transform-box: fill-box; transform-origin: center; animation: pop 2.4s ease-out infinite; }
+  .an .rg { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; animation: ring 2.4s ease-out infinite; }
+  @keyframes grow { 0% { transform: scaleY(0); } 30%, 88% { transform: scaleY(1); } 100% { transform: scaleY(1); opacity: .0; } }
+  @keyframes draw { 0%, 25% { stroke-dashoffset: 520; } 62%, 88% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+  @keyframes pop { 0%, 60% { transform: scale(0); } 68% { transform: scale(1.35); } 74%, 88% { transform: scale(1); opacity: 1; } 100% { transform: scale(1); opacity: 0; } }
+  @keyframes ring { 0%, 66% { transform: scale(.6); opacity: 0; } 70% { opacity: .5; } 88%, 100% { transform: scale(2.4); opacity: 0; } }
+  .sp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sp-card { background: var(--panel); border-radius: 24px; padding: 16px; box-shadow: var(--shadow); }
+  .sp-card .h { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .sp-card .ic { width: 28px; height: 28px; border-radius: 9px; background: var(--bg); display: grid; place-items: center; }
+  .sp-card .ic svg { width: 16px; height: 16px; }
+  .sp-card .v { font-size: 36px; font-weight: 700; letter-spacing: -.05em; padding: 18px 0 12px; line-height: 1; }
+  .sp-card .v.money { font-size: 21px; letter-spacing: -.035em; padding: 24px 0 14px; }
+  .sp-card .v.money small { font-size: 13px; }
+  .sp-card .v small { font-size: 16px; color: var(--muted); font-weight: 500; margin-left: 3px; }
+  .sp-card .mb { height: 6px; border-radius: 3px; background: var(--fill); }
+  .sp-card .t { margin-top: 7px; height: 16px; }
+  .sp-tab { position: fixed; left: 16px; right: 16px; bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px)); display: flex; gap: 2px; padding: 6px; border-radius: 36px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(17,18,20,.10), 0 1px 3px rgba(17,18,20,.05); }
+  @media (prefers-color-scheme: dark) { .sp-tab { box-shadow: 0 10px 30px rgba(0,0,0,.4); } }
+  .sp-tab span { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 7px; border-radius: 30px; font-size: 11px; }
+  .sp-tab span.on { background: var(--tab-on); font-weight: 700; }
+  .sp-tab svg { width: 24px; height: 24px; }
+  .sp-pc img { width: 84px; height: 84px; border-radius: 19px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+  .sp-pc .mini { width: 150px !important; height: 60px !important; margin-top: 18px; }
+  .sp-pc b { font-size: 17px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; }
+  @media (prefers-reduced-motion: reduce) { .an *, .sk { animation: none !important; } .an .ln { stroke-dashoffset: 0; } }
   #msg { color: #c62828; font-size: 13px; text-align: center; margin-top: 12px; min-height: 1em; }
 </style>
 </head>
@@ -50,10 +104,21 @@
   <div id="msg"></div>
 </div>
 <iframe id="app" hidden title="가계부" allow="clipboard-write"></iframe>
-<div id="splash" hidden>
-  <img src="icon.png?v=2" alt="">
-  <b>가계부</b>
-  <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="currentColor"><rect x="11" y="1.5" width="2" height="6" rx="1"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".85" transform="rotate(45 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".7" transform="rotate(90 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".6" transform="rotate(135 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".5" transform="rotate(180 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".4" transform="rotate(225 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".3" transform="rotate(270 12 12)"/><rect x="11" y="1.5" width="2" height="6" rx="1" opacity=".2" transform="rotate(315 12 12)"/></g></svg>
+<div id="splash" hidden aria-hidden="true">
+  <!-- 폰: 앱 홈과 같은 틀 -->
+  <div class="sp-m">
+    <div class="sp-top"><span class="sp-mb"><span class="spMo">11월</span><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg></span><i class="gap"></i>
+      <span class="sp-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="sp-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg></span><span class="sp-sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></span></div>
+    <div class="sp-main">
+      <div class="sp-d" id="spDate"></div><div class="sp-g2"><i class="sk" style="width:55%"></i></div><div class="sp-msg"><i class="sk" style="width:76%"></i></div>
+      <div class="sp-lab"><span class="spMo">11월</span> 지출</div><div class="sp-num">-<small>원</small></div><div class="sp-cmp">불러오는 중이에요</div>
+      <div class="sp-chart"><svg class="an" viewBox="0 0 330 150" preserveAspectRatio="none" aria-hidden="true"><rect class="b" x="18" y="124" width="22" height="26" rx="4" style="animation-delay:0.00s"/><rect class="b" x="58" y="106" width="22" height="44" rx="4" style="animation-delay:0.05s"/><rect class="b" x="98" y="120" width="22" height="30" rx="4" style="animation-delay:0.10s"/><rect class="b" x="138" y="92" width="22" height="58" rx="4" style="animation-delay:0.15s"/><rect class="b" x="178" y="110" width="22" height="40" rx="4" style="animation-delay:0.20s"/><rect class="b" x="218" y="84" width="22" height="66" rx="4" style="animation-delay:0.25s"/><rect class="b" x="258" y="100" width="22" height="50" rx="4" style="animation-delay:0.30s"/><rect class="b on" x="298" y="66" width="22" height="84" rx="4" style="animation-delay:0.35s"/><path class="ln" d="M0 138 L29 128 L69 116 L109 104 L149 82 L189 70 L229 48 L269 36 L309 14"/><circle class="rg" cx="309" cy="14" r="7"/><circle class="dt" cx="309" cy="14" r="7"/></svg></div>
+    </div>
+    <div class="sp-grid"><div class="sp-card"><div class="h"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.4l2.6 2.6 4.9-5.2"/></svg></span>미확인 전표</div><div class="v">-<small>건</small></div><div class="mb"></div><div class="t"><i class="sk" style="height:12px;width:60%"></i></div></div><div class="sp-card"><div class="h"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg></span>처리할 알림</div><div class="v">-<small>건</small></div><div class="mb"></div><div class="t"><i class="sk" style="height:12px;width:60%"></i></div></div><div class="sp-card"><div class="h"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H17v3"/><path d="M4 7.5V18a2 2 0 0 0 2 2h14V8H6.5A2.5 2.5 0 0 1 4 5.5"/></svg></span>순자산</div><div class="v money">-<small>원</small></div><div class="mb"></div><div class="t"><i class="sk" style="height:12px;width:60%"></i></div></div><div class="sp-card"><div class="h"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h4"/></svg></span>카드 결제 예정</div><div class="v money">-<small>원</small></div><div class="mb"></div><div class="t"><i class="sk" style="height:12px;width:60%"></i></div></div></div>
+    <nav class="sp-tab"><span class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z" fill="currentColor"/></svg>홈</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.8"/><rect x="13" y="4" width="7" height="7" rx="1.8"/><rect x="4" y="13" width="7" height="7" rx="1.8"/><rect x="13" y="13" width="7" height="7" rx="1.8"/></svg>재무제표</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/></svg>전표</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><path d="M5 20a1 1 0 0 0 1 1h13"/></svg>원장</span><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="4" height="9" rx="1.5"/><rect x="10" y="4" width="4" height="16" rx="1.5"/><rect x="16" y="8" width="4" height="12" rx="1.5"/></svg>추이</span></nav>
+  </div>
+  <!-- PC: 가운데 로고 + 그래프 -->
+  <div class="sp-pc"><img src="icon.png?v=2" alt=""><svg class="an mini" viewBox="0 0 330 150" preserveAspectRatio="none" aria-hidden="true"><rect class="b" x="18" y="124" width="22" height="26" rx="4" style="animation-delay:0.00s"/><rect class="b" x="58" y="106" width="22" height="44" rx="4" style="animation-delay:0.05s"/><rect class="b" x="98" y="120" width="22" height="30" rx="4" style="animation-delay:0.10s"/><rect class="b" x="138" y="92" width="22" height="58" rx="4" style="animation-delay:0.15s"/><rect class="b" x="178" y="110" width="22" height="40" rx="4" style="animation-delay:0.20s"/><rect class="b" x="218" y="84" width="22" height="66" rx="4" style="animation-delay:0.25s"/><rect class="b" x="258" y="100" width="22" height="50" rx="4" style="animation-delay:0.30s"/><rect class="b on" x="298" y="66" width="22" height="84" rx="4" style="animation-delay:0.35s"/><path class="ln" d="M0 138 L29 128 L69 116 L109 104 L149 82 L189 70 L229 48 L269 36 L309 14"/><circle class="rg" cx="309" cy="14" r="7"/><circle class="dt" cx="309" cy="14" r="7"/></svg><b>가계부</b></div>
 </div>
 
 <script>
@@ -74,8 +139,11 @@
     f.hidden = false;
     // 시작 화면: 앱이 "준비됨" 신호를 보내면 걷어요. 신호가 없어도 10초 뒤에는 걷어요(잠긴 페이지·오류 화면이 보이도록).
     var sp = document.getElementById('splash');
+    var now = new Date(), mo = (now.getMonth() + 1) + '월';
+    document.getElementById('spDate').textContent = mo + ' ' + now.getDate() + '일 ' + '일월화수목금토'.charAt(now.getDay()) + '요일';
+    [].forEach.call(document.querySelectorAll('.spMo'), function (el) { el.textContent = mo; });
     sp.hidden = false;
-    var hide = function () { sp.classList.add('hide'); setTimeout(function () { sp.hidden = true; }, 350); };
+    var hide = function () { if (sp.hidden || sp.classList.contains('hide')) return; sp.classList.add('hide'); setTimeout(function () { sp.hidden = true; }, 400); };
     window.addEventListener('message', function (ev) { if (ev.data && ev.data.type === 'ledger-ready') hide(); });
     setTimeout(hide, 10000);
   } else {
