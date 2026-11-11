@@ -1,0 +1,51 @@
+# main에 apps-script/ 변경이 들어오면 Apps Script 웹앱을 "같은 배포"에 새 버전으로 올림 (주소 유지)
+# 필요한 Secret: CLASPRC_JSON  (맥에서 clasp login 후 ~/.clasprc.json 내용 전체)
+name: Apps Script 배포
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps-script/**']
+  workflow_dispatch:   # Actions 탭에서 수동 실행
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+env:
+  DEPLOYMENT_ID: AKfycbw37FbwCQG84QMFl3i5w_ZhWj44Nb5zCpn1oqgyyRPHiVQLoUPSKcYMyCmXDQrwAL7i1Q
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: clasp 설치 (맥과 같은 버전)
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: 로그인 정보 넣기
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then echo "::error::Secret CLASPRC_JSON이 없어요. SETUP.md를 보고 등록해 주세요."; exit 1; fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: 코드 올리기
+        working-directory: apps-script
+        run: clasp push -f
+
+      - name: 같은 배포에 새 버전 (-i 고정)
+        working-directory: apps-script
+        run: |
+          DESC="$(git log -1 --pretty=%s | cut -c1-90) (${GITHUB_SHA::7})"
+          clasp deploy -i "$DEPLOYMENT_ID" -d "$DESC"
+          clasp deployments
+
+      - name: 로그인 정보 지우기
+        if: always()
+        run: rm -f ~/.clasprc.json
