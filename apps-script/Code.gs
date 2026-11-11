@@ -23,7 +23,7 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** 화면이 호출: 키가 맞을 때만 분개장(A:L)과 계정과목표(A:E)를 돌려줍니다. */
+/** 화면이 호출: 키가 맞을 때만 분개장(A:L)과 계정과목표(A:G)를 돌려줍니다. 계정과목표 F는 안내 문구, G는 사용 여부. */
 function getData(key) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -38,7 +38,7 @@ function getData(key) {
     return { rows: rows, gid: sh.getSheetId() };
   };
   const journal = read('분개장', 12);
-  const accounts = read('계정과목표', 5);
+  const accounts = read('계정과목표', COL_ACCT_USE);
   return {
     journal: journal.rows,
     journalGid: journal.gid,
@@ -86,8 +86,8 @@ function readRules_(ss) {
   if (!sh || sh.getLastRow() < 2) return [];
   const n = Math.min(6, sh.getMaxColumns());
   return sh.getRange(2, 1, sh.getLastRow() - 1, n).getDisplayValues()
-    .filter((r) => String(r[0]).trim())
-    .map((r) => [r[0], r[1], r[2], n >= 6 ? r[5] : '']);   // 키워드, 차변, 대변, 기본 적요
+    .map((r, i) => [r[0], r[1], r[2], n >= 6 ? r[5] : '', i + 2])   // 키워드, 차변, 대변, 기본 적요, 시트 행
+    .filter((r) => String(r[0]).trim());
 }
 function upsertRule_(ss, keyword, debit, credit, desc) {
   const sh = rulesSheet_(ss);
@@ -307,4 +307,125 @@ function splitMemo_(apply) {
     });
     return todo.length;
   });
+}
+
+/* ===================== 설정: 분류 규칙 관리 ===================== */
+/** 규칙 저장. r: {row?(수정할 시트 행), kw?(그 행의 원래 키워드), keyword, debit, credit, desc} */
+function saveRule(key, r) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = rulesSheet_(ss);
+    const names = accountNames_(ss);
+    const kw = String(r.keyword || '').trim();
+    const debit = String(r.debit || '').trim(), credit = String(r.credit || '').trim(), desc = String(r.desc || '').trim();
+    if (!kw) throw new Error('키워드를 넣어 주세요.');
+    if (!debit) throw new Error('차변 계정을 골라 주세요.');
+    if (!names.has(debit)) throw new Error('차변 계정이 계정과목표에 없어요: ' + debit);
+    if (credit && !names.has(credit)) throw new Error('대변 계정이 계정과목표에 없어요: ' + credit);
+    if (debit === credit) throw new Error('차변과 대변이 같은 계정이에요.');
+    const last = sh.getLastRow();
+    const keys = last < 2 ? [] : sh.getRange(2, 1, last - 1, 1).getDisplayValues().map((x) => String(x[0]).trim().toLowerCase());
+    const row = r.row ? ruleRow_(sh, r.row, r.kw) : 0;
+    const dup = keys.indexOf(kw.toLowerCase());
+    if (dup >= 0 && dup + 2 !== row) throw new Error('같은 키워드 규칙이 이미 있어요: ' + kw);
+    const today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+    if (row) {
+      const before = sh.getRange(row, 1, 1, 6).getDisplayValues()[0];
+      sh.getRange(row, 1, 1, 3).setValues([[kw, debit, credit]]);
+      sh.getRange(row, 4, 1, 3).setValues([['설정에서 수정', today, desc]]);
+      log_(ss, '분류 규칙 수정', '', before, { keyword: kw, debit: debit, credit: credit, desc: desc });
+    } else {
+      sh.appendRow([kw, debit, credit, '설정에서 추가', today, desc]);
+      log_(ss, '분류 규칙 추가', '', null, { keyword: kw, debit: debit, credit: credit, desc: desc });
+    }
+    return { ok: true };
+  });
+}
+/** 규칙 삭제. 행의 키워드가 kw와 같을 때만 지워요(행이 밀렸으면 거부). */
+function deleteRule(key, row, kw) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = rulesSheet_(ss);
+    row = ruleRow_(sh, row, kw);
+    const before = sh.getRange(row, 1, 1, 6).getDisplayValues()[0];
+    sh.deleteRow(row);
+    log_(ss, '분류 규칙 삭제', '', before, null);
+    return { ok: true };
+  });
+}
+function ruleRow_(sh, row, kw) {
+  row = Number(row);
+  if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('규칙을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.');
+  const cur = String(sh.getRange(row, 1).getDisplayValue()).trim();
+  if (cur !== String(kw || '').trim()) throw new Error('규칙 시트가 바뀌었어요. 새로고침 후 다시 시도해 주세요.');
+  return row;
+}
+function accountNames_(ss) {
+  return new Set(ss.getSheetByName('계정과목표').getRange('B2:B').getValues().map((x) => String(x[0]).trim()).filter(String));
+}
+
+/* ===================== 설정: 계정과목 ===================== */
+/**
+ * 계정과목표: A 코드 / B 계정명 / C 구분 / D 정상잔액 / E 재무제표 구분 / F 안내 문구(일부 행) / G 사용('사용중지'면 숨김)
+ * ⚠️ 시산표는 계정과목표를 "행 순서대로" 참조해요 → 중간 삽입·행 삭제 금지, 항상 맨 아래에 추가.
+ * ⚠️ 분개장·분류규칙은 계정 "이름"으로 연결돼요 → 앱에서 이름 변경·삭제는 하지 않아요.
+ */
+const COL_ACCT_USE = 7;   // G열
+const ACCT_RANGE = { '자산': [100, 199], '부채': [200, 299], '자본': [300, 399], '수익': [400, 499], '비용': [500, 599] };
+const ACCT_FSG = { '자산': ['현금및예금', '적금', '투자자산', '기타자산'], '부채': ['부채'], '자본': ['자본'], '수익': ['수익'], '비용': ['비용'] };
+function addAccount(key, a) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName('계정과목표');
+    const type = String(a.type || '').trim();
+    const name = String(a.name || '').trim();
+    const code = Number(a.code);
+    const fsg = String(a.fsg || '').trim();
+    if (!ACCT_RANGE[type]) throw new Error('구분을 골라 주세요.');
+    if (!name) throw new Error('계정 이름을 넣어 주세요.');
+    if (/[,'"!]/.test(name) || name.length > 30) throw new Error('계정 이름에 쉼표·따옴표·느낌표는 쓸 수 없고, 30자까지예요.');
+    const [lo, hi] = ACCT_RANGE[type];
+    if (!(Number.isInteger(code) && code >= lo && code <= hi)) throw new Error(type + ' 계정 코드는 ' + lo + '~' + hi + ' 사이여야 해요.');
+    if (ACCT_FSG[type].indexOf(fsg) < 0) throw new Error('재무제표 구분을 골라 주세요.');
+    const lastData = lastRowBy_(sh, 2);
+    const rows = lastData < 2 ? [] : sh.getRange(2, 1, lastData - 1, 2).getDisplayValues();
+    if (rows.some((r) => Number(r[0]) === code)) throw new Error('이미 있는 계정 코드예요: ' + code);
+    if (rows.some((r) => String(r[1]).trim() === name)) throw new Error('이미 있는 계정 이름이에요: ' + name);
+    const row = lastData + 1;
+    if (sh.getRange(row, 1, 1, 5).getDisplayValues()[0].some(String)) throw new Error('계정과목표 ' + row + '행이 비어 있지 않아요. 시트를 확인해 주세요.');
+    const side = (type === '자산' || type === '비용') ? '차변' : '대변';
+    sh.getRange(row, 1, 1, 5).setValues([[code, name, type, side, fsg]]);
+    log_(ss, '계정 추가', '', null, { row: row, code: code, name: name, type: type, side: side, fsg: fsg });
+    return { row: row, count: row - 1 };
+  });
+}
+/** 사용중지(on=false) / 다시 사용(on=true). G열만 바꿔요. */
+function setAccountUse(key, code, name, on) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName('계정과목표');
+    const lastData = lastRowBy_(sh, 2);
+    const rows = lastData < 2 ? [] : sh.getRange(2, 1, lastData - 1, 2).getDisplayValues();
+    const i = rows.findIndex((r) => Number(r[0]) === Number(code) && String(r[1]).trim() === String(name).trim());
+    if (i < 0) throw new Error('계정을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.');
+    header_(sh, COL_ACCT_USE, '사용');
+    const cell = sh.getRange(i + 2, COL_ACCT_USE);
+    const before = cell.getDisplayValue();
+    const after = on ? '' : '사용중지';
+    cell.setValue(after);
+    log_(ss, on ? '계정 다시 사용' : '계정 사용중지', '', { code: code, name: name, use: before }, { use: after });
+    return { ok: true };
+  });
+}
+/** col열 기준 마지막으로 값이 있는 행 (수식 등으로 getLastRow가 부풀어도 안전하게). */
+function lastRowBy_(sh, col) {
+  const last = sh.getLastRow();
+  if (last < 2) return 1;
+  const v = sh.getRange(2, col, last - 1, 1).getDisplayValues();
+  for (let i = v.length - 1; i >= 0; i--) if (String(v[i][0]).trim()) return i + 2;
+  return 1;
 }
