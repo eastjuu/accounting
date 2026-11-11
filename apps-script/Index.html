@@ -109,6 +109,15 @@ table.tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;
 .ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .ctrl label{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
 .empty{padding:28px;text-align:center;color:var(--muted)}
+/* 앱처럼: 글자 선택·길게 눌러 메뉴 막기. 입력칸과 .sel(메모·알림 원문)은 복사 가능 */
+body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,select,.sel{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.mini{display:flex;align-items:flex-end;gap:6px;height:44px;margin-top:10px}
+.mini i{flex:1;border-radius:5px;background:var(--line);min-height:3px}
+.mini i.cur{background:var(--accent)}
+.mini-l{display:flex;gap:6px;margin-top:4px;font-size:11px;color:var(--muted)}.mini-l span{flex:1;text-align:center}
+.set-note{font-size:12.5px;color:var(--muted);line-height:1.5;padding:0 16px;margin:-14px 0 22px}
+.tag-off{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--muted);margin-left:6px;vertical-align:2px}
 
 /* 재무제표 양식 */
 .fs-doc{max-width:760px;margin:0 auto;padding:28px 32px}
@@ -522,7 +531,7 @@ select,input[type=search]{border-radius:10px}
   <aside class="side">
     <div class="brand"><i>₩</i>가계부</div>
     <div id="sidenav"></div>
-    <div class="side-foot">구글 시트 '복식부기_가계부'를 읽어 보여주는 조회 전용 화면이에요.<br>입력·수정은 시트에서 해주세요.</div>
+    <div class="side-foot">구글 시트 '복식부기_가계부'와 연결된 화면이에요.<br>앱에서 바꾼 내용은 시트에 바로 저장되고 변경이력에 남아요.</div>
   </aside>
   <div class="main">
     <header class="top">
@@ -566,20 +575,27 @@ const ICONS = {
   ledger:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M9 8h6"/>',
   monthly:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
   inbox:'<path d="M3 13h5l2 3h4l2-3h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/>',
+  rules:'<path d="M4 6h10M4 12h7M4 18h10"/><path d="M17 9l3 3-3 3"/>',
+  accounts:'<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 13h8M8 17h5"/>',
+  more:'<path d="M5 7h14M5 12h14M5 17h14"/>',
 };
 const MENU = [
   { g:'개요', items:[['summary','요약']] },
   { g:'재무제표', items:[['bs','재무상태표'],['is','손익계산서'],['trial','시산표']] },
   { g:'장부', items:[['journal','전표 조회'],['ledger','계정별 원장'],['inbox','알림 수신함']] },
   { g:'분석', items:[['monthly','월별 추이']] },
+  { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
+const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
+const APP_VER = '2026.11.12';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
 const TAB_IC = {
   summary:['<path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/>', '<path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z" fill="currentColor"/>'],
-  bs:['<rect x="4" y="4" width="7" height="7" rx="1.8"/><rect x="13" y="4" width="7" height="7" rx="1.8"/><rect x="4" y="13" width="7" height="7" rx="1.8"/><rect x="13" y="13" width="7" height="7" rx="1.8"/>',
-      '<g fill="currentColor"><rect x="4" y="4" width="7" height="7" rx="1.8"/><rect x="13" y="4" width="7" height="7" rx="1.8"/><rect x="4" y="13" width="7" height="7" rx="1.8"/><rect x="13" y="13" width="7" height="7" rx="1.8"/></g>'],
+  bs:['<rect x="4" y="4" width="7" height="16" rx="1.8"/><rect x="13" y="4" width="7" height="6.5" rx="1.8"/><rect x="13" y="12.5" width="7" height="7.5" rx="1.8"/>',
+      '<g fill="currentColor"><rect x="4" y="4" width="7" height="16" rx="1.8"/><rect x="13" y="4" width="7" height="6.5" rx="1.8"/><rect x="13" y="12.5" width="7" height="7.5" rx="1.8"/></g>'],
+  more:['<path d="M5 7h14M5 12h14M5 17h14"/>', '<path d="M5 7h14M5 12h14M5 17h14" style="stroke-width:2.6"/>'],
   journal:['<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>', '<path d="M6 3h9l4 4v14H6z" fill="currentColor"/><path d="M9 13h7M9 17h7" style="stroke:var(--tab-on)"/>'],
   ledger:['<path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z"/><path d="M5 20a1 1 0 0 0 1 1h13"/>', '<path d="M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2z" fill="currentColor"/><path d="M5 20a1 1 0 0 0 1 1h13"/>'],
   monthly:['<rect x="4" y="11" width="4" height="9" rx="1.5"/><rect x="10" y="4" width="4" height="16" rx="1.5"/><rect x="16" y="8" width="4" height="12" rx="1.5"/>',
@@ -623,7 +639,7 @@ const isM = () => window.matchMedia('(max-width:860px)').matches;
 const CHEV = '<svg class="chev" viewBox="0 0 8 13" aria-hidden="true"><path d="M1.5 1.5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const UPDOWN = '<svg class="chev ud" viewBox="0 0 10 16" aria-hidden="true"><path d="M2 6l3-3 3 3M2 10l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const SEARCH_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
-const MTITLE = { summary:'홈', bs:'재무제표', is:'재무제표', trial:'재무제표', journal:'전표', ledger:'원장', monthly:'월별 추이', inbox:'수신함' };
+const MTITLE = { summary:'홈', bs:'재무제표', is:'재무제표', trial:'재무제표', journal:'전표', ledger:'원장', monthly:'월별 추이', inbox:'수신함', more:'전체', rules:'분류 규칙', accounts:'계정과목' };
 /* 적요에서 "(알림: …)" 원문 부분을 떼고 제목만 */
 const memoT = (m) => txt(m).replace(/\s*\(알림\s*[:：].*$/, '').trim();
 const WD = '일월화수목금토';
@@ -721,7 +737,7 @@ function openInbox(row) {
     '<div class="dt-hero"><div class="dt-amt">' + (x.amount != null ? fmt(x.amount) + '<small>원</small>' : '알림') + '</div><div class="dt-t">' + esc(x.title) + '</div><div class="dt-s">' + esc(x.at) + ' 수신 · ' + ibTag(x) + '</div></div>' +
     (x.kind === 'hold' && x.memo ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">보류 사유</b><div style="margin-top:4px">' + esc(x.memo) + '</div></div>' : '') +
     (x.kind === 'wait' || x.kind === 'hold' ? '<div class="acts"><button class="pbtn" data-wr="mkentry" data-ibr="' + x.row + '">전표로 만들기</button></div>' : '') +
-    sec('알림 원문', '<div class="ios-row static"><div class="ib-raw">' + esc(x.text) + '</div></div>') +
+    sec('알림 원문', '<div class="ios-row static"><div class="ib-raw sel">' + esc(x.text) + '</div></div>') +
     (entries.length ? sec('입력된 전표', entries.map(jrow).join('')) : x.nos.length ? sec('입력된 전표', vrow('전표 번호', esc(x.nos.join(', ')))) : '') +
     (x.kind !== 'hold' && x.memo ? sec('메모', '<div class="ios-row static"><div class="tx"><div class="t1 wrap">' + esc(x.memo) + '</div></div></div>') : '') +
     sec('', '<a class="ios-row act" href="' + esc(url) + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">수신함 시트에서 이 행 열기</div></div><span class="val">↗</span></a>');
@@ -960,7 +976,7 @@ function skeleton() {
 function build(raw) {
   const GROUPS = { '현금및예금':'cash', '적금':'savings', '투자자산':'invest', '기타자산':'other' };
   const accounts = raw.accounts.filter((r) => txt(r[1])).map((r) => {
-    const a = { code:num(r[0]), name:txt(r[1]), type:txt(r[2]), side:txt(r[3]), fsg:txt(r[4]) };
+    const a = { code:num(r[0]), name:txt(r[1]), type:txt(r[2]), side:txt(r[3]), fsg:txt(r[4]), active:txt(r[6]) !== '사용중지' };
     let g = { '부채':'liab', '자본':'equity', '수익':'rev', '비용':'exp' }[a.type] || 'etc';
     if (a.type === '자산') g = GROUPS[a.fsg] || (a.code >= 150 && a.code < 170 ? 'savings' : a.code >= 170 && a.code < 200 ? 'invest' : a.code >= 100 && a.code < 120 ? 'cash' : 'other');
     a.group = g;
@@ -1018,7 +1034,7 @@ function build(raw) {
         amount:amt ? num(amt[1]) : null, title:shop ? shop[1].trim() : ibTitle(body) };
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
-  const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]) })).filter((r) => r.kw);
+  const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]), row:num(r[4]) })).filter((r) => r.kw);
   return { accounts, byName, journal, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
 }
 
@@ -1072,12 +1088,13 @@ function renderNav() {
   $('sidenav').innerHTML = MENU.map((g) => '<div class="nav-g">' + g.g + '</div>' + g.items.map(([k, l]) =>
     '<button class="nav-i' + (S.view === k ? ' on' : '') + '" data-go="' + k + '">' + icon(k) + l + '<span class="key">' + (ALL.findIndex((x) => x[0] === k) + 1) + '</span></button>').join('')).join('');
   const FS = ['bs', 'is', 'trial'];
-  const MOBILE = [['summary', '홈'], ['bs', '재무제표'], ['journal', '전표'], ['ledger', '원장'], ['monthly', '추이']];
+  const MOBILE = [['summary', '홈'], ['bs', '재무제표'], ['journal', '전표'], ['ledger', '원장'], ['more', '전체']];
+  const base = S.stack.length ? S.stack[0] : S.view;   // 들어간 화면이면 출발한 탭을 켜요
   $('tabbar').innerHTML = MOBILE.map(([k, l]) => {
-    const on = S.view === k || (k === 'bs' && FS.includes(S.view));
+    const on = base === k || (k === 'bs' && FS.includes(base)) || (k === 'more' && MORE_SUB.includes(base));
     return '<button class="' + (on ? 'on' : '') + '" data-go="' + (k === 'bs' && FS.includes(S.view) ? S.view : k) + '" aria-label="' + l + '">' + tabIcon(k, on) + l + '</button>';
   }).join('');
-  $('title').textContent = isM() ? MTITLE[S.view] : ALL.find((x) => x[0] === S.view)[1];
+  $('title').textContent = isM() ? MTITLE[S.view] : (ALL.find((x) => x[0] === S.view) || [0, MTITLE[S.view]])[1];
   $('period').hidden = !PERIOD_VIEWS.includes(S.view) || !S.D || !S.D.years.length;
   document.querySelector('.top').classList.toggle('has-period', !$('period').hidden);
   const back = isM() && S.stack.length ? S.stack[S.stack.length - 1] : null;
@@ -1168,6 +1185,9 @@ const VIEWS = {
   },
 
   inbox() { return inboxView(); },
+  more() { return moreView(); },
+  rules() { return rulesView(); },
+  accounts() { return accountsView(); },
 
   bs() {
     const P = period(), D = S.D;
@@ -1387,7 +1407,7 @@ function openEntry(row) {
     sec('분개', jl('차변', e.debit) + jl('대변', e.credit)) +
     sec('정보', vrow('날짜', esc(e.date || '-')) + vrow('전표 번호', esc(e.no || '-')) + vrow('시트 위치', '분개장 ' + e.row + '행') +
       (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '') +
-      (e.note ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">메모</div><div class="t1 wrap" style="white-space:pre-wrap">' + esc(e.note) + '</div></div></div>' : '')) +
+      (e.note ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">메모</div><div class="t1 wrap sel" style="white-space:pre-wrap">' + esc(e.note) + '</div></div></div>' : '')) +
     sec('', accts.map((n) => '<div class="ios-row act" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + ' 원장 보기</div></div>' + CHEV + '</div>').join('') +
       '<a class="ios-row act" href="' + esc(url) + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">시트에서 이 행 열기</div></div><span class="val">↗</span></a>');
   $('drBody').scrollTop = 0;
@@ -1473,7 +1493,7 @@ async function voidUI(e, on) {
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
 function acctOptions(sel) {
   return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
-    const as = S.D.accounts.filter((a) => a.type === ty);
+    const as = S.D.accounts.filter((a) => a.type === ty && (a.active || a.name === sel));
     return as.length ? '<optgroup label="' + ty + '">' + as.map((a) => '<option value="' + esc(a.name) + '"' + (a.name === sel ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</optgroup>' : '';
   }).join('');
 }
@@ -1569,15 +1589,183 @@ function onWrite(t) {
     clearTimeout(onWrite.tv); voidUI(e, true);
   }
   else if (w === 'unvoid' && e) voidUI(e, false);
+  else if (w === 'rule-new') openRule(0);
+  else if (w === 'acct-new') openAcctNew();
+  else if (w === 'rule-del' || w === 'acct-on' || w === 'acct-off') settingWrite(w);
   else if (w === 'edit' && e) editEntry(e.row);
   else if (w === 'mkentry') entryFromInbox(Number(t.dataset.ibr));
   else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', note:'', confirm:'확인' } });
-  else if (w === 'cancel') { const F = S.form; if (F && F.mode === 'edit') openEntry(F.row); else if (F && F.ib) openInbox(F.ib.row); else closeEntry(); }
+  else if (w === 'cancel') { const F = S.form; if (F && /^(rule|acct)/.test(F.mode)) closeEntry(); else if (F && F.mode === 'edit') openEntry(F.row); else if (F && F.ib) openInbox(F.ib.row); else closeEntry(); }
   else if (w === 'confirmall') {
     if (!S.arm) { S.arm = true; render(); clearTimeout(onWrite.tm); onWrite.tm = setTimeout(() => { S.arm = false; render(); }, 4000); return; }
     S.arm = false; clearTimeout(onWrite.tm);
     setConfirmUI(visibleUnconfirmed(), '확인');
   }
+}
+
+/* ===== 전체 탭 · 설정 ===== */
+const row1 = (attrs, t1, t2, right) => '<div class="ios-row' + (attrs ? ' act"' + attrs : ' static"') + '><div class="tx"><div class="t1">' + t1 + '</div>' + (t2 ? '<div class="t2">' + t2 + '</div>' : '') + '</div>' + (right ? '<div class="val">' + right + '</div>' : '') + (attrs ? CHEV : '') + '</div>';
+function moreView() {
+  const D = S.D;
+  const now = new Date(), cur = now.getFullYear() * 100 + now.getMonth() + 1;
+  const yms = [];
+  for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); yms.push(d.getFullYear() * 100 + d.getMonth() + 1); }
+  const ex = yms.map((ym) => totals({ s:ym, e:ym }).exp);
+  const mx = Math.max(1, ...ex);
+  const prev = ex[4], diff = ex[5] - prev;
+  const c = D.inbox ? ibCounts() : null;
+  const card = '<div class="ios-sec"><div class="ios-list"><div class="ios-row act" data-go="monthly" style="display:block;padding:14px 16px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="t2" style="margin:0">이번 달 비용</div><div class="t2" style="margin:0">월별 추이 ›</div></div>' +
+    '<div style="font-size:24px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums">' + fmt(ex[5]) + '<small style="font-size:15px;font-weight:500;color:var(--muted)">원</small></div>' +
+    (prev ? '<div class="t2">지난달보다 ' + (diff >= 0 ? '+' : '') + fmt(diff) + '원</div>' : '') +
+    '<div class="mini">' + ex.map((v, i) => '<i class="' + (i === 5 ? 'cur' : '') + '" style="height:' + Math.max(4, v / mx * 100) + '%"></i>').join('') + '</div>' +
+    '<div class="mini-l">' + yms.map((ym) => '<span>' + (ym % 100) + '월</span>').join('') + '</div></div></div></div>';
+  const off = D.accounts.filter((a) => !a.active).length;
+  return card +
+    sec('보기', row1(' data-go="monthly"', '월별 추이', '', '') + row1(' data-go="inbox"', '알림 수신함', '', c ? (c.wait ? '대기 ' + c.wait : '') + (c.hold ? (c.wait ? ' · ' : '') + '보류 ' + c.hold : '') : '')) +
+    sec('관리', row1(' data-go="rules"', '분류 규칙', '알림 키워드 → 계정·기본 적요', D.rules.length + '개') +
+      row1(' data-go="accounts"', '계정과목', '계정 추가 · 사용중지', D.accounts.length + '개' + (off ? ' (중지 ' + off + ')' : ''))) +
+    sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
+      '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>' +
+      row1('', '앱 버전', '', APP_VER));
+}
+function rulesView() {
+  const list = S.D.rules.slice().sort((a, b) => a.kw.localeCompare(b.kw, 'ko'));
+  return '<button class="sbtn allbtn" data-wr="rule-new">＋ 규칙 추가</button>' +
+    '<p class="set-note" style="margin:0 0 18px">알림 원문에 키워드가 들어 있으면 그 계정·기본 적요로 분류돼요. 여러 개가 맞으면 가장 긴 키워드가 우선이에요.</p>' +
+    (list.length ? sec('규칙 ' + list.length + '개', list.map((r) => row1(' data-rule="' + r.row + '"', esc(r.kw), esc(r.debit) + ' / ' + esc(r.credit || '자동') + (r.desc ? ' · ' + esc(r.desc) : ''), '')).join(''))
+      : '<div class="empty">아직 규칙이 없어요</div>');
+}
+const TYPES = ['자산', '부채', '자본', '수익', '비용'];
+const ACCT_RANGE = { '자산':[100, 199], '부채':[200, 299], '자본':[300, 399], '수익':[400, 499], '비용':[500, 599] };
+const ACCT_FSG = { '자산':['현금및예금', '적금', '투자자산', '기타자산'], '부채':['부채'], '자본':['자본'], '수익':['수익'], '비용':['비용'] };
+function acctUse(a) { return S.D.journal.filter((e) => !e.void && (e.debit === a.name || e.credit === a.name)).length; }
+function accountsView() {
+  const D = S.D;
+  const nExp = D.accounts.filter((a) => a.type === '비용').length;
+  const warn = [];
+  if (D.accounts.length >= 40) warn.push('시트의 시산표는 계정 40개까지만 보여줘요 (지금 ' + D.accounts.length + '개).');
+  if (nExp > 20) warn.push('시트의 월별합계 비용표는 비용 계정 20개까지만 보여줘요 (지금 ' + nExp + '개).');
+  return '<button class="sbtn allbtn" data-wr="acct-new">＋ 계정 추가</button>' +
+    (warn.length ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:20px">' + warn.map(esc).join('<br>') + '</div>' : '') +
+    TYPES.map((ty) => {
+      const as = D.accounts.filter((a) => a.type === ty);
+      return as.length ? sec(ty, as.map((a) => row1(' data-acode="' + a.code + '"', esc(a.name) + (a.active ? '' : '<span class="tag-off">사용중지</span>'), a.code + ' · ' + esc(a.fsg || '-'), fmt(acctAt(a, { s:0, e:999912 }).bal))).join('')) : '';
+    }).join('') +
+    '<p class="set-note" style="margin-top:0">계정 이름 변경·삭제는 기존 전표와 연결이 끊길 수 있어서 앱에서는 하지 않아요. 쓰지 않는 계정은 사용중지하면 입력 목록에서 빠져요.</p>';
+}
+function openDrawer(title, html) {
+  $('drTitle').textContent = title;
+  $('drBody').innerHTML = html;
+  $('drBody').scrollTop = 0;
+  $('drawer').classList.add('on'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('on');
+}
+const fmRow = (lab, ctl) => '<label class="ios-row fm"><span class="lab">' + lab + '</span>' + ctl + '</label>';
+function openRule(row) {
+  const r = row ? S.D.rules.find((x) => x.row === row) : null;
+  if (row && !r) return;
+  S.form = { mode:'rule', row:r ? r.row : 0, kw:r ? r.kw : '' };
+  S.armDel = false;
+  const credOpts = '<option value="">자동 (알림 종류로 판단)</option>' + acctOptions(r ? r.credit : '').replace(/^<option value="" disabled[^>]*>[^<]*<\/option>/, '');
+  openDrawer(r ? '규칙 수정' : '새 규칙', '<form id="rf" autocomplete="off">' +
+    sec('', fmRow('키워드', '<input type="text" name="kw" required value="' + esc(r ? r.kw : '') + '" placeholder="알림에 들어 있는 글자">') +
+      fmRow('차변', '<select name="debit" required>' + acctOptions(r ? r.debit : '') + '</select>') +
+      fmRow('대변', '<select name="credit">' + credOpts + '</select>') +
+      '<label class="ios-row fm"><span class="lab" style="width:72px">기본 적요</span><input type="text" name="desc" value="' + esc(r ? r.desc : '') + '" placeholder="비우면 가맹점명"></label>') +
+    '<div class="acts"><button type="submit" class="pbtn ink" id="rfSave">저장</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
+    (r ? '<div class="acts"><button type="button" class="sbtn voidbtn" id="rfDel" data-wr="rule-del">규칙 삭제</button></div>' : '') +
+    '<p class="fm-note">저장하면 구글 시트 분류규칙 시트가 바뀌어요</p></form>');
+}
+function openAcct(code) {
+  const a = S.D.accounts.find((x) => x.code === code);
+  if (!a) return;
+  S.form = { mode:'acct', code:a.code, name:a.name };
+  const bal = acctAt(a, { s:0, e:999912 }).bal;
+  openDrawer(a.name,
+    sec('', vrow('코드', String(a.code)) + vrow('구분', esc(a.type)) + vrow('정상잔액', esc(a.side || '-')) + vrow('재무제표 구분', esc(a.fsg || '-')) +
+      vrow('현재 잔액', fmt(bal) + '원') + vrow('사용 전표', acctUse(a) + '건') + vrow('상태', a.active ? '사용' : '사용중지')) +
+    '<div class="acts">' + (a.active ? '<button class="sbtn voidbtn" data-wr="acct-off">사용중지</button>' : '<button class="pbtn" data-wr="acct-on">다시 사용</button>') +
+      '<button class="sbtn" data-acct="' + esc(a.name) + '">원장 보기</button></div>' +
+    '<p class="fm-note">' + (a.active ? '사용중지하면 전표·규칙 입력 목록에서 빠져요. 기존 전표와 잔액은 그대로예요.' : '다시 사용하면 입력 목록에 나타나요.') + '</p>');
+}
+function nextCode(ty) {
+  const [lo, hi] = ACCT_RANGE[ty];
+  const used = new Set(S.D.accounts.map((a) => a.code));
+  const mx = Math.max(lo, ...S.D.accounts.filter((a) => a.code >= lo && a.code <= hi).map((a) => a.code));
+  for (let c = mx + 1; c <= hi; c++) if (!used.has(c)) return c;
+  for (let c = lo + 1; c <= hi; c++) if (!used.has(c)) return c;
+  return '';
+}
+function openAcctNew() {
+  S.form = { mode:'acctnew' };
+  const ty = '비용';
+  openDrawer('계정 추가', '<form id="af" autocomplete="off">' +
+    sec('', fmRow('구분', '<select name="atype">' + TYPES.map((t) => '<option' + (t === ty ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>') +
+      fmRow('코드', '<input type="text" name="code" inputmode="numeric" required value="' + nextCode(ty) + '">') +
+      fmRow('이름', '<input type="text" name="name" required placeholder="예: 구독료">') +
+      '<label class="ios-row fm"><span class="lab" style="width:104px;white-space:nowrap">재무제표 구분</span><select name="fsg">' + ACCT_FSG[ty].map((g) => '<option>' + g + '</option>').join('') + '</select></label>') +
+    '<div class="acts"><button type="submit" class="pbtn ink" id="afSave">추가</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
+    '<p class="fm-note">계정과목표 맨 아래에 추가돼요 · 이름은 나중에 앱에서 바꿀 수 없어요</p></form>');
+}
+document.addEventListener('change', (ev) => {
+  const f = ev.target.closest('#af');
+  if (!f || ev.target.name !== 'atype') return;
+  const ty = ev.target.value;
+  f.code.value = nextCode(ty);
+  f.fsg.innerHTML = ACCT_FSG[ty].map((g) => '<option>' + g + '</option>').join('');
+});
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-rule],[data-acode]');
+  if (!t) return;
+  if (t.dataset.rule) openRule(Number(t.dataset.rule)); else openAcct(Number(t.dataset.acode));
+});
+function setSaving(btn, on, label) { S.saving = on; if (btn) { btn.disabled = on; if (label) btn.textContent = label; } }
+document.addEventListener('submit', async (ev) => {
+  const f = ev.target;
+  if (f.id !== 'rf' && f.id !== 'af') return;
+  ev.preventDefault();
+  if (S.saving) return;
+  const F = S.form;
+  const btn = $(f.id === 'rf' ? 'rfSave' : 'afSave'), lbl = btn.textContent;
+  let sent = false;
+  try {
+    if (f.id === 'rf') {
+      const r = { row:F.row, kw:F.kw, keyword:f.kw.value.trim(), debit:f.debit.value, credit:f.credit.value, desc:f.desc.value.trim() };
+      if (!r.keyword) throw new Error('키워드를 넣어 주세요');
+      if (!r.debit) throw new Error('차변 계정을 골라 주세요');
+      if (r.debit === r.credit) throw new Error('차변과 대변이 같은 계정이에요');
+      setSaving(btn, true, '저장 중…'); sent = true;
+      await api('saveRule', r);
+      toast(F.row ? '규칙을 수정했어요' : '규칙을 추가했어요');
+    } else {
+      const a = { type:f.atype.value, code:num(f.code.value), name:f.name.value.trim(), fsg:f.fsg.value };
+      if (!a.name) throw new Error('계정 이름을 넣어 주세요');
+      if (S.D.accounts.some((x) => x.name === a.name)) throw new Error('이미 있는 계정 이름이에요');
+      if (S.D.accounts.some((x) => x.code === a.code)) throw new Error('이미 있는 계정 코드예요');
+      setSaving(btn, true, '추가 중…'); sent = true;
+      const res = await api('addAccount', a);
+      toast(a.name + ' 계정을 추가했어요' + (res && res.count >= 40 ? ' · 시산표 40개 한도를 확인하세요' : ''));
+    }
+    setSaving(btn, false, lbl);
+    closeEntry(); load();
+  } catch (err) {
+    setSaving(btn, false, lbl);
+    toast((sent ? '저장하지 못했어요 · ' : '') + err.message, true);
+  }
+});
+async function settingWrite(w) {
+  const F = S.form;
+  if (S.saving || !F) return;
+  if (w === 'rule-del') {
+    if (!S.armDel) { S.armDel = true; const b = $('rfDel'); if (b) { b.classList.add('arm'); b.textContent = '한 번 더 누르면 삭제돼요'; } clearTimeout(settingWrite.t); settingWrite.t = setTimeout(() => { S.armDel = false; const b = $('rfDel'); if (b) { b.classList.remove('arm'); b.textContent = '규칙 삭제'; } }, 4000); return; }
+    clearTimeout(settingWrite.t); S.armDel = false;
+  }
+  S.saving = true;
+  try {
+    if (w === 'rule-del') { await api('deleteRule', F.row, F.kw); toast('규칙을 삭제했어요'); }
+    else { await api('setAccountUse', F.code, F.name, w === 'acct-on'); toast(F.name + (w === 'acct-on' ? ' 계정을 다시 사용해요' : ' 계정을 사용중지했어요')); }
+    S.saving = false; closeEntry(); load();
+  } catch (err) { S.saving = false; toast('저장하지 못했어요 · ' + err.message, true); }
 }
 
 /* ===== 이동·이벤트 ===== */
