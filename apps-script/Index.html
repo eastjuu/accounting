@@ -105,6 +105,7 @@ table.tbl{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;
 .neg{color:var(--bad)}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
 .badge.pending{background:var(--warn-soft);color:var(--warn)}
+.badge.void{background:var(--fill,#e5e7eb);color:var(--muted);text-decoration:line-through}
 .ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .ctrl label{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
 .empty{padding:28px;text-align:center;color:var(--muted)}
@@ -192,7 +193,7 @@ table.fs{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .ios-row .chev.ud{width:10px;height:16px}
 .ios-row .dot{margin:0}
 .fgv{color:var(--fg)}.fgv.neg{color:var(--bad)}
-.st-warn{color:var(--warn)!important}.st-bad{color:var(--bad)!important}
+.st-warn{color:var(--warn)!important}.st-void{color:var(--muted)!important;text-decoration:line-through}.st-bad{color:var(--bad)!important}
 .pos{color:var(--ok)}
 .sw{-webkit-appearance:none;appearance:none;flex:none;width:51px;height:31px;margin:0;border-radius:16px;background:var(--fill);position:relative;cursor:pointer;transition:background-color .2s}
 .sw::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:transform .2s}
@@ -370,6 +371,7 @@ select,input[type=search]{border-radius:10px}
 .dr-h .x{color:var(--fg)}
 .badge{background:var(--fill);color:var(--fg)}
 .badge.pending{background:var(--accent-soft);color:var(--accent)}
+.badge.void{background:var(--fill);color:var(--muted)}
 
 /* ===== 쓰기: 버튼·입력 폼·알림 ===== */
 .acts{display:flex;gap:10px;margin:0 0 24px}
@@ -380,6 +382,7 @@ select,input[type=search]{border-radius:10px}
 .pbtn:disabled,.sbtn:disabled{opacity:.5;cursor:default}
 .pbtn.arm{background:var(--fg);color:var(--bg)}
 .allbtn{width:100%;margin:0 0 14px}
+.voidbtn{flex:1;color:var(--bad)}.voidbtn.arm{background:var(--bad);color:#fff;border-color:var(--bad)}
 .fm{cursor:default}
 .fm:active{background:none}
 .fm .lab{flex:none;width:52px;font-size:15px;color:var(--muted)}
@@ -630,8 +633,8 @@ function dLabel(dk) {
   return (y !== new Date().getFullYear() ? y + '년 ' : '') + m + '월 ' + d + '일 (' + WD[new Date(y, m - 1, d).getDay()] + ')';
 }
 const atLabel = (at) => { const m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}:\d{2})/.exec(at || ''); return m ? +m[2] + '월 ' + +m[3] + '일 ' + m[4] : String(at || ''); };
-const stMatch = (e) => !S.st || (S.st === '오류' ? e.problems.length > 0 : e.confirm === S.st);
-const stTag = (e) => e.problems.length && !e.valid ? '<div class="sm st-bad">오류</div>' : e.confirm === '미확인' ? '<div class="sm st-warn">미확인</div>' : '';
+const stMatch = (e) => (!S.st ? !e.void : S.st === '무효' ? e.void : S.st === '오류' ? e.problems.length > 0 : e.confirm === S.st);
+const stTag = (e) => e.void ? '<div class="sm st-void">무효</div>' : e.problems.length && !e.valid ? '<div class="sm st-bad">오류</div>' : e.confirm === '미확인' ? '<div class="sm st-warn">미확인</div>' : '';
 const isInc = (e) => { const a = S.D.byName.get(e.credit); return !!a && a.type === '수익'; };
 function jrow(e) {
   const inc = isInc(e);
@@ -901,7 +904,7 @@ function homeView() {
   // 위젯 카드
   const wgH = '<div class="wgrid o2">' +
     wcard(' data-go="journal" data-st="미확인"', 'check', '미확인 전표', cnt('w1', unconf), '건', unconf ? 'hot' : '',
-      mbar([[conf, 'var(--fg)'], [unconf, 'var(--accent)'], [D.issues.length, 'var(--bad)']]) + '<div class="t">확인 ' + conf + ' / 전체 ' + D.journal.length + (D.issues.length ? ' · 오류 ' + D.issues.length : '') + '</div>') +
+      mbar([[conf, 'var(--fg)'], [unconf, 'var(--accent)'], [D.issues.length, 'var(--bad)']]) + '<div class="t">확인 ' + conf + ' / 전체 ' + D.journal.filter((e) => !e.void).length + (D.issues.length ? ' · 오류 ' + D.issues.length : '') + '</div>') +
     wcard(' data-go="inbox" data-ib=""', 'tray', '처리할 알림', c ? cnt('w2', c.wait + c.hold) : '-', '건', c && c.hold ? 'hot' : '',
       c ? mbar([[c.wait, 'var(--accent)'], [c.hold, 'var(--fg)'], [c.dup, 'var(--c4)'], [c.done, 'var(--chev)']]) + '<div class="t">대기 ' + c.wait + ' · 보류 ' + c.hold + ' · 중복 ' + c.dup + '</div>' : '<div class="t">Code.gs 업데이트 필요</div>') +
     wcard(' data-go="bs"', 'wallet', '순자산', cnt('w3', t.assets - t.liab), '원', 'money',
@@ -914,7 +917,7 @@ function homeView() {
   const ctot = Math.max(1, p.cats.reduce((s, x) => s + x[1], 0));
   const catH = '<div class="o4">' + hcard('분류별 지출', p.mo + '월', p.cats.length ? '<div class="ios-list">' + p.cats.map(([n, v]) => '<div class="ios-row" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + '</div><div class="pbar"><i style="width:' + (v / p.cats[0][1] * 100) + '%"></i></div></div><div class="rt"><div class="amt">' + fmt(v) + '</div><div class="sm">' + Math.round(v / ctot * 100) + '%</div></div></div>').join('') + '</div>' : '<div class="empty">' + p.mo + '월 지출이 아직 없어요</div>') + '</div>';
   // 최근 전표
-  const recent = D.journal.slice().sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row)).slice(0, 5);
+  const recent = D.journal.filter((e) => !e.void).sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row)).slice(0, 5);
   const recH = '<div class="o5">' + hcard('최근 전표', '', recent.length ? '<div class="ios-list">' + recent.map(jrow).join('') + '</div>' : '<div class="empty">아직 기록된 전표가 없어요</div>', ' data-go="journal" data-st=""') + '</div>';
   // 자산 구성
   const parts = [['현금및예금', t.cash, 'var(--c1)'], ['적금', t.savings, 'var(--c3)'], ['투자자산', t.invest, 'var(--c4)'], ['기타자산', t.other, 'var(--c2)']];
@@ -972,6 +975,8 @@ function build(raw) {
     const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]) };
     e.dk = dkey(e.date);
     e.ym = e.dk ? Number(e.dk.slice(0, 6)) : 0;
+    e.void = e.confirm === '무효';   // 무효 전표: 목록엔 남고 집계·원장에서 빠짐
+    if (e.void) { e.problems = []; e.valid = false; journal.push(e); return; }
     const p = [];
     if (!e.dk) p.push(e.date ? '날짜 형식 (' + e.date + ')' : '날짜 빈칸');
     if (!e.debit) p.push('차변 계정 빈칸'); else if (!byName.has(e.debit)) p.push('계정과목표에 없는 차변 계정: ' + e.debit);
@@ -1096,7 +1101,7 @@ function renderStatus() {
     '<span><span class="dot' + (t.ok ? '' : ' bad') + '"></span>대차 <b>' + (t.ok ? '일치' : '불일치') + '</b></span>' +
     '<span class="clickable" data-go="journal" data-st="미확인"><span class="dot' + (unconf ? ' warn' : '') + '"></span>미확인 <b>' + unconf + '</b>건</span>' +
     '<span class="clickable" data-go="summary"><span class="dot' + (D.issues.length ? ' bad' : '') + '"></span>오류 <b>' + D.issues.length + '</b>건</span>' +
-    '<span>전표 <b>' + D.journal.length + '</b>건</span>' +
+    '<span>전표 <b>' + D.journal.filter((e) => !e.void).length + '</b>건</span>' +
     '<span>갱신 ' + esc(D.at) + '</span>';
   $('upd').textContent = S.note ? '최신 데이터를 못 불러왔어요 · 저장된 ' + D.at + ' 데이터' : '갱신 ' + D.at;
 }
@@ -1142,7 +1147,7 @@ const VIEWS = {
     const parts = [['현금및예금', t.cash, 'var(--c1)'], ['적금', t.savings, 'var(--c3)'], ['투자자산', t.invest, 'var(--c4)'], ['기타자산', t.other, 'var(--c2)']];
     const pos = parts.filter((p) => p[1] > 0);
     const totPos = pos.reduce((s, p) => s + p[1], 0) || 1;
-    const recent = D.journal.slice(-6).reverse();
+    const recent = D.journal.filter((e) => !e.void).slice(-6).reverse();
     let h = '<div class="kpis">' + kpi('순자산', t.assets - t.liab, 'hero') + kpi('자산총계', t.assets) + kpi('부채총계', t.liab) + kpi('카드 결제 예정액', card) + '</div>';
     h += '<div class="kpis">' + kpi((y || '') + '년 수익', yt.rev) + kpi((y || '') + '년 비용', yt.exp) + kpi((y || '') + '년 순손익', yt.net) + '</div>';
     if (D.issues.length) {
@@ -1212,7 +1217,7 @@ const VIEWS = {
     const q = S.q.toLowerCase();
     const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q))).slice().reverse();
     return newBtn() + allBtn(list) + '<div class="card"><div class="ctrl"><input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" style="flex:1;min-width:160px">' +
-      '<select id="st"><option value="">전체</option><option value="미확인"' + (S.st === '미확인' ? ' selected' : '') + '>미확인</option><option value="확인"' + (S.st === '확인' ? ' selected' : '') + '>확인</option><option value="오류"' + (S.st === '오류' ? ' selected' : '') + '>오류</option></select>' +
+      '<select id="st"><option value="">전체</option><option value="미확인"' + (S.st === '미확인' ? ' selected' : '') + '>미확인</option><option value="확인"' + (S.st === '확인' ? ' selected' : '') + '>확인</option><option value="오류"' + (S.st === '오류' ? ' selected' : '') + '>오류</option><option value="무효"' + (S.st === '무효' ? ' selected' : '') + '>무효</option></select>' +
       '<span class="muted" style="font-size:12px">' + list.length + '건 · 최근 입력순</span></div>' +
       (list.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>전표</th><th>날짜</th><th>차변</th><th>대변</th><th class="num">금액</th><th class="hide-m">적요</th><th>확인</th></tr></thead><tbody>' +
       list.map((e) => '<tr class="go' + (S.sel === e.row ? ' sel' : '') + '" data-entry="' + e.row + '"><td class="muted">' + esc(e.no) + '</td><td>' + esc(e.date) + '</td><td>' + esc(e.debit) + '</td><td>' + esc(e.credit) + '</td><td class="num">' + fmt(e.amount) + '</td><td class="hide-m muted">' + esc(e.memo) + '</td><td>' + badge(e) + '</td></tr>').join('') +
@@ -1250,7 +1255,7 @@ const VIEWS = {
       months.map((x) => '<tr><td>' + x.m + '월</td>' + numCell(x.rev) + numCell(x.exp) + numCell(x.net) + numCell(x.ytd) + '</tr>').join('') + '</tbody></table></div></div>';
   },
 };
-const badge = (e) => e.problems.length && !e.valid ? '<span class="badge pending">오류</span>' : e.confirm === '미확인' ? '<span class="badge pending">미확인</span>' : '<span class="badge">' + esc(e.confirm || '-') + '</span>';
+const badge = (e) => e.void ? '<span class="badge void">무효</span>' : e.problems.length && !e.valid ? '<span class="badge pending">오류</span>' : e.confirm === '미확인' ? '<span class="badge pending">미확인</span>' : '<span class="badge">' + esc(e.confirm || '-') + '</span>';
 
 function drawChart() {
   const el = $('chart');
@@ -1323,7 +1328,7 @@ function summaryM() {
   const totPos = pos.reduce((s, p) => s + p[1], 0) || 1;
   h += sec('자산 구성', '<div style="padding:14px 16px"><div class="stack">' + pos.map((p) => '<i style="width:' + (p[1] / totPos * 100) + '%;background:' + p[2] + '"></i>').join('') + '</div><div class="legend">' +
     parts.map((p) => '<span><em style="background:' + p[2] + '"></em>' + p[0] + '</span><span>' + fmt(p[1]) + '원 <span class="muted">' + (p[1] > 0 ? Math.round(p[1] / totPos * 100) : 0) + '%</span></span>').join('') + '</div></div>');
-  const recent = D.journal.slice(-5).reverse();
+  const recent = D.journal.filter((e) => !e.void).slice(-5).reverse();
   if (recent.length) h += sec('최근 전표', recent.map(jrow).join(''), '<button class="lnk" data-go="journal" data-st="">모두 보기</button>');
   return h;
 }
@@ -1331,7 +1336,7 @@ function journalM() {
   const q = S.q.toLowerCase();
   const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row));
-  const segs = [['', '전체'], ['미확인', '미확인'], ['확인', '확인'], ['오류', '오류']];
+  const segs = [['', '전체'], ['미확인', '미확인'], ['확인', '확인'], ['오류', '오류'], ['무효', '무효']];
   return '<label class="ios-search">' + SEARCH_IC + '<input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" enterkeyhint="search" autocomplete="off"></label>' +
     '<div class="seg">' + segs.map(([v, l]) => '<button class="' + (S.st === v ? 'on' : '') + '" data-go="journal" data-st="' + v + '">' + l + '</button>').join('') + '</div>' + newBtn() + allBtn(list) +
     (list.length ? byDate(list, (e) => e.dk, jrow) : '<div class="empty">조건에 맞는 전표가 없어요</div>');
@@ -1375,7 +1380,10 @@ function openEntry(row) {
   $('drBody').innerHTML =
     '<div class="dt-hero"><div class="dt-amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.amount) + '<small>원</small></div><div class="dt-t">' + esc(memoT(e.memo) || (e.debit + ' / ' + e.credit)) + '</div><div class="dt-s">' + esc(e.dk ? dLabel(e.dk) : (e.date || '날짜 없음')) + ' · ' + badge(e) + '</div></div>' +
     (e.problems.length ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">확인 필요</b><div style="margin-top:4px">' + esc(e.problems.join(', ')) + '</div></div>' : '') +
-    '<div class="acts">' + (e.confirm === '확인' ? '<button class="sbtn" data-wr="unconfirm">미확인으로 되돌리기</button>' : '<button class="pbtn" data-wr="confirm">확인 처리</button>') + '<button class="sbtn" data-wr="edit">수정</button></div>' +
+    (e.void ? '<div class="card" style="padding:12px 14px;margin-bottom:16px;color:var(--muted)">무효 처리된 전표예요 · 장부 계산에서 빠져 있어요</div>' +
+      '<div class="acts"><button class="sbtn" data-wr="unvoid">무효 취소</button></div>'
+    : '<div class="acts">' + (e.confirm === '확인' ? '<button class="sbtn" data-wr="unconfirm">미확인으로 되돌리기</button>' : '<button class="pbtn" data-wr="confirm">확인 처리</button>') + '<button class="sbtn" data-wr="edit">수정</button></div>' +
+      '<div class="acts"><button class="sbtn voidbtn' + (S.armV === e.row ? ' arm' : '') + '" data-wr="void">' + (S.armV === e.row ? '한 번 더 누르면 무효 처리돼요' : '무효 처리') + '</button></div>') +
     sec('분개', jl('차변', e.debit) + jl('대변', e.credit)) +
     sec('정보', vrow('날짜', esc(e.date || '-')) + vrow('전표 번호', esc(e.no || '-')) + vrow('시트 위치', '분개장 ' + e.row + '행') +
       (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '') +
@@ -1444,6 +1452,24 @@ async function setConfirmUI(entries, value) {
     toast('저장하지 못했어요 · ' + err.message, true);
   }
 }
+async function voidUI(e, on) {
+  if (S.saving) return;
+  S.saving = true; S.armV = 0;
+  const prev = e.confirm;
+  e.confirm = on ? '무효' : '미확인'; e.void = on;
+  render(); openEntry(e.row);
+  try {
+    await api('voidEntry', e.row, e.no, on);
+    toast(on ? '전표 ' + e.no + '번을 무효 처리했어요' : '무효를 취소했어요 · 미확인 상태예요');
+    S.saving = false;
+    load();
+  } catch (err) {
+    e.confirm = prev; e.void = prev === '무효';
+    S.saving = false;
+    render(); openEntry(e.row);
+    toast('저장하지 못했어요 · ' + err.message, true);
+  }
+}
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
 function acctOptions(sel) {
   return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
@@ -1475,7 +1501,7 @@ function openForm(mode, ctx) {
 }
 function editEntry(row) {
   const e = S.D.journal.find((x) => x.row === row);
-  if (!e) return;
+  if (!e || e.void) return;
   openForm('edit', { row:e.row, no:e.no, v:{ date:isoOf(e.dk), debit:e.debit, credit:e.credit, amount:e.amount, memo:e.memo, note:e.note, confirm:e.confirm } });
 }
 /* 수신함 알림에서 날짜·금액을 채우고, 적요는 추천값(규칙의 기본 적요 → 가맹점명), 메모에는 알림 원문 (카드 승인이면 대변을 카드 계정으로) */
@@ -1538,6 +1564,11 @@ function onWrite(t) {
   const e = S.sel && S.D.journal.find((x) => x.row === S.sel);
   if (w === 'confirm' && e) setConfirmUI([e], '확인');
   else if (w === 'unconfirm' && e) setConfirmUI([e], '미확인');
+  else if (w === 'void' && e) {
+    if (S.armV !== e.row) { S.armV = e.row; openEntry(e.row); clearTimeout(onWrite.tv); onWrite.tv = setTimeout(() => { if (S.armV) { S.armV = 0; if (S.sel) openEntry(S.sel); } }, 4000); return; }
+    clearTimeout(onWrite.tv); voidUI(e, true);
+  }
+  else if (w === 'unvoid' && e) voidUI(e, false);
   else if (w === 'edit' && e) editEntry(e.row);
   else if (w === 'mkentry') entryFromInbox(Number(t.dataset.ibr));
   else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', note:'', confirm:'확인' } });
