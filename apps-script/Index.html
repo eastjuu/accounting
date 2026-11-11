@@ -1645,7 +1645,7 @@ function accountsView() {
   const nExp = D.accounts.filter((a) => a.type === '비용').length;
   const warn = [];
   if (D.accounts.length >= 40) warn.push('시트의 시산표는 계정 40개까지만 보여줘요 (지금 ' + D.accounts.length + '개).');
-  if (nExp > 11) warn.push('시트의 월별합계 비용표는 비용 계정 11개까지만 보여줘요 (지금 ' + nExp + '개).');
+  if (nExp > 20) warn.push('시트의 월별합계 비용표는 비용 계정 20개까지만 보여줘요 (지금 ' + nExp + '개).');
   return '<button class="sbtn allbtn" data-wr="acct-new">＋ 계정 추가</button>' +
     (warn.length ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:20px">' + warn.map(esc).join('<br>') + '</div>' : '') +
     TYPES.map((ty) => {
