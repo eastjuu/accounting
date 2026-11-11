@@ -524,6 +524,74 @@ select,input[type=search]{border-radius:10px}
   .tabbar button{color:var(--fg)}
   .tabbar button.on{background:var(--tab-on);box-shadow:none}
 }
+/* ===== Liquid Glass (폰) — 탭 바·상단 버튼·시트·토스트만 유리, 카드 본문은 불투명 유지 ===== */
+@media (max-width:860px){
+  :root{
+    --spring:linear(0, .009, .035 2.1%, .141 4.4%, .723 12.9%, .938 16.7%, 1.017 19.4%, 1.067, 1.099 24.3%, 1.108 26%, 1.1, 1.085 30.8%, 1.032 37.1%, 1.002 41.5%, .988 46.4%, .993 61.5%, 1.001 79.1%, 1);
+    --spring-soft:linear(0, .02, .08 3%, .3 8%, .62 15%, .86 23%, .98 31%, 1.02 38%, 1.025 45%, 1.01 58%, 1);
+    --g-bg:rgba(255,255,255,.30);--g-hi:rgba(255,255,255,.95);--g-lo:rgba(255,255,255,.45);--g-pill:rgba(255,255,255,.62);
+    --g-sheet:rgba(243,244,246,.74);--g-shadow:rgba(17,18,20,.14);
+  }
+  .tabbar{--pad:6px;--tab-on:#fbfbfc;left:16px;right:16px;padding:var(--pad);border:0;overflow:visible;background:var(--g-bg);
+    -webkit-backdrop-filter:blur(12px) saturate(190%) brightness(1.06);backdrop-filter:blur(12px) saturate(190%) brightness(1.06);
+    box-shadow:inset 0 1px 1px var(--g-hi),inset 0 -1px 1px var(--g-lo),inset 0 -14px 22px -14px rgba(255,255,255,.7),inset 0 14px 18px -16px rgba(255,255,255,.85),0 10px 32px var(--g-shadow),0 1px 3px rgba(17,18,20,.08);
+    transition:left .6s var(--spring),right .6s var(--spring),padding .6s var(--spring),transform .6s var(--spring)}
+  .tabbar::before{display:block;content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:2;mix-blend-mode:screen;
+    background:radial-gradient(80px 50px at var(--mx,50%) -6px,rgba(255,255,255,.8),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.36),rgba(255,255,255,0) 46%)}
+  .tabbar::after{content:"";position:absolute;inset:0;border-radius:inherit;padding:1.2px;pointer-events:none;z-index:2;
+    background:linear-gradient(140deg,rgba(255,255,255,.95),rgba(255,255,255,.15) 35%,rgba(255,255,255,.05) 60%,rgba(255,255,255,.8));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  .tabbar button,.tabbar button.on{z-index:1;background:none;box-shadow:none;transition:transform .5s var(--spring),font-size .45s var(--spring),padding .6s var(--spring),gap .6s var(--spring)}
+  .tabbar button:active{transform:scale(.86)}
+  .tabbar button svg{transition:transform .5s var(--spring)}
+  .tabbar button.on svg{transform:scale(1.08)}
+  /* 선택 알약: 칸 번호(--i)로 위치를 정해서 탭 바 폭이 바뀌어도 따라가요 */
+  .tb-pill{--w:calc((100% - 2 * var(--pad) - 8px) / 5);position:absolute;top:var(--pad);bottom:var(--pad);z-index:0;pointer-events:none;border-radius:30px;
+    left:calc(var(--pad) + (var(--w) + 2px) * var(--i,0));width:var(--w);background:var(--g-pill);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,1),inset 0 -1px 2px rgba(17,18,20,.05),0 3px 10px rgba(17,18,20,.10);
+    transition:left .62s var(--spring),width .62s var(--spring),top .6s var(--spring),bottom .6s var(--spring),transform .35s var(--spring)}
+  .tb-pill.stretch{transform:scaleY(.86) scaleX(1.08)}
+  .tb-pill.off{opacity:0}
+  /* 스크롤하면 가로·세로 함께 작은 알약으로 접힘 (접힐 땐 빠르게, 펼칠 땐 스프링) */
+  .tabbar.min{--pad:4px;left:46px;right:46px;transform:translateY(4px);
+    transition:left .35s cubic-bezier(.3,0,.2,1),right .35s cubic-bezier(.3,0,.2,1),padding .35s cubic-bezier(.3,0,.2,1),transform .35s cubic-bezier(.3,0,.2,1)}
+  .tabbar.min button{font-size:0;gap:0;padding:8px 2px;transition:font-size .2s ease,padding .35s cubic-bezier(.3,0,.2,1),gap .35s cubic-bezier(.3,0,.2,1),transform .5s var(--spring)}
+  .tabbar.min button svg{width:22px;height:22px}
+  .tabbar.min .tb-pill{transition:left .35s cubic-bezier(.3,0,.2,1),width .35s cubic-bezier(.3,0,.2,1),top .35s,bottom .35s}
+  /* 홈 상단 네모 버튼 */
+  .sq{background:rgba(255,255,255,.45);border:0;-webkit-backdrop-filter:blur(10px) saturate(180%);backdrop-filter:blur(10px) saturate(180%);
+    box-shadow:inset 0 1px 1px var(--g-hi),inset 0 -1px 1px rgba(255,255,255,.4),0 4px 14px rgba(17,18,20,.08);transition:transform .5s var(--spring)}
+  .sq:active{transform:scale(.88)}
+  /* 누르면 살짝 눌렸다가 스프링으로 복귀 */
+  .ios-row.act,.ios-row[data-entry],.ios-row[data-ibrow],.ios-row[data-rule],.ios-row[data-acode],.pbtn,.sbtn{transition:transform .45s var(--spring),background-color .15s}
+  .ios-row.act:active,.ios-row[data-entry]:active,.ios-row[data-ibrow]:active,.ios-row[data-rule]:active,.ios-row[data-acode]:active{transform:scale(.975)}
+  .pbtn:active,.sbtn:active{transform:scale(.95)}
+  /* 떠 있는 유리 시트 */
+  .scrim{background:rgba(17,18,20,.18)}
+  .drawer{left:8px;right:8px;bottom:8px;width:auto;max-height:calc(100% - 52px);border-radius:34px;background:var(--g-sheet);
+    -webkit-backdrop-filter:blur(28px) saturate(190%);backdrop-filter:blur(28px) saturate(190%);
+    box-shadow:inset 0 1px 1px var(--g-hi),inset 0 0 0 1px rgba(255,255,255,.5),0 20px 60px rgba(17,18,20,.22);
+    transform:translateY(calc(100% + 16px)) scale(.94);transform-origin:50% 100%;transition:transform .42s cubic-bezier(.4,0,1,1),visibility 0s .42s}
+  .drawer.on{transform:none;transition:transform .7s var(--spring-soft);box-shadow:inset 0 1px 1px var(--g-hi),inset 0 0 0 1px rgba(255,255,255,.5),0 20px 60px rgba(17,18,20,.22)}
+  .dr-b{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+  .drawer .ios-list{background:color-mix(in srgb,var(--panel) 85%,transparent)}
+  .dr-h .x{background:rgba(255,255,255,.6);border-radius:999px;padding:6px 12px;box-shadow:inset 0 1px 1px #fff,0 1px 4px rgba(17,18,20,.08)}
+  /* 토스트 */
+  .toast{background:rgba(30,32,38,.66);color:#fff;-webkit-backdrop-filter:blur(18px) saturate(180%);backdrop-filter:blur(18px) saturate(180%);
+    border-radius:22px;box-shadow:inset 0 1px 1px rgba(255,255,255,.25),0 10px 30px rgba(0,0,0,.2);transition:opacity .3s,transform .6s var(--spring)}
+}
+@media (prefers-color-scheme:dark) and (max-width:860px){
+  :root{--g-bg:rgba(44,48,57,.42);--g-hi:rgba(255,255,255,.22);--g-lo:rgba(255,255,255,.08);--g-pill:rgba(255,255,255,.16);--g-sheet:rgba(29,32,39,.76);--g-shadow:rgba(0,0,0,.45)}
+  .tabbar{--tab-on:#43474f;box-shadow:inset 0 1px 1px var(--g-hi),inset 0 -1px 1px var(--g-lo),inset 0 -14px 22px -14px rgba(255,255,255,.08),0 10px 32px var(--g-shadow)}
+  .tabbar::before{background:radial-gradient(80px 50px at var(--mx,50%) -6px,rgba(255,255,255,.22),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,0) 46%)}
+  .tabbar::after{background:linear-gradient(140deg,rgba(255,255,255,.35),rgba(255,255,255,.04) 35%,rgba(255,255,255,0) 60%,rgba(255,255,255,.22))}
+  .tb-pill{box-shadow:inset 0 1px 1px rgba(255,255,255,.25),0 3px 10px rgba(0,0,0,.25)}
+  .sq{background:rgba(44,48,57,.5);box-shadow:inset 0 1px 1px var(--g-hi),0 4px 14px rgba(0,0,0,.3)}
+  .drawer,.drawer.on{box-shadow:inset 0 1px 1px var(--g-hi),inset 0 0 0 1px rgba(255,255,255,.08),0 20px 60px rgba(0,0,0,.5)}
+  .dr-h .x{background:rgba(255,255,255,.12);box-shadow:inset 0 1px 1px rgba(255,255,255,.2)}
+  .scrim{background:rgba(0,0,0,.35)}
+}
+@media (prefers-reduced-motion:reduce){.tabbar,.tabbar button,.tb-pill,.drawer,.drawer.on,.sq,.toast{transition:none!important}}
 </style>
 </head>
 <body>
@@ -1090,10 +1158,20 @@ function renderNav() {
   const FS = ['bs', 'is', 'trial'];
   const MOBILE = [['summary', '홈'], ['bs', '재무제표'], ['journal', '전표'], ['ledger', '원장'], ['more', '전체']];
   const base = S.stack.length ? S.stack[0] : S.view;   // 들어간 화면이면 출발한 탭을 켜요
-  $('tabbar').innerHTML = MOBILE.map(([k, l]) => {
-    const on = base === k || (k === 'bs' && FS.includes(base)) || (k === 'more' && MORE_SUB.includes(base));
+  const onOf = (k) => base === k || (k === 'bs' && FS.includes(base)) || (k === 'more' && MORE_SUB.includes(base));
+  const ti = MOBILE.findIndex(([k]) => onOf(k));
+  $('tabbar').innerHTML = '<i class="tb-pill' + (ti < 0 ? ' off' : '') + '" aria-hidden="true"></i>' + MOBILE.map(([k, l]) => {
+    const on = onOf(k);
     return '<button class="' + (on ? 'on' : '') + '" data-go="' + (k === 'bs' && FS.includes(S.view) ? S.view : k) + '" aria-label="' + l + '">' + tabIcon(k, on) + l + '</button>';
   }).join('');
+  // 선택 알약: 이전 칸에서 새 칸으로 스프링처럼 미끄러져요
+  const pill = $('tabbar').firstChild, from = S.tabI == null ? ti : S.tabI;
+  if (ti >= 0) {
+    pill.style.setProperty('--i', from);
+    if (from !== ti && from >= 0) { void pill.offsetWidth; pill.style.setProperty('--i', ti); pill.classList.add('stretch'); setTimeout(() => pill.classList.remove('stretch'), 200); }
+    else pill.style.setProperty('--i', ti);
+    S.tabI = ti;
+  }
   $('title').textContent = isM() ? MTITLE[S.view] : (ALL.find((x) => x[0] === S.view) || [0, MTITLE[S.view]])[1];
   $('period').hidden = !PERIOD_VIEWS.includes(S.view) || !S.D || !S.D.years.length;
   document.querySelector('.top').classList.toggle('has-period', !$('period').hidden);
@@ -1830,6 +1908,18 @@ document.addEventListener('keydown', (ev) => {
   if (n >= 1 && n <= ALL.length) go(ALL[n - 1][0]);
   if (ev.key === 'r' || ev.key === 'R') load();
 });
+/* 탭 바: 내리면 작게 접고 올리면 펼침, 손가락 위치를 따라 반사광 */
+let tbY = 0;
+$('view').addEventListener('scroll', () => {
+  const y = $('view').scrollTop, tb = $('tabbar');
+  if (y > 60 && y > tbY + 4) tb.classList.add('min');
+  else if (y < tbY - 4 || y < 30) tb.classList.remove('min');
+  tbY = y;
+}, { passive:true });
+['pointerdown', 'pointermove'].forEach((t) => document.addEventListener(t, (ev) => {
+  const tb = $('tabbar'), r = tb.getBoundingClientRect();
+  if (ev.clientY > r.top - 30) tb.style.setProperty('--mx', (ev.clientX - r.left) + 'px');
+}, { passive:true }));
 const mq = window.matchMedia('(max-width:860px)');
 if (mq.addEventListener) mq.addEventListener('change', render); else mq.addListener(render);
 $('view').addEventListener('scroll', () => { document.querySelector('.main').classList.toggle('scrolled', $('view').scrollTop > 30); }, { passive:true });
