@@ -383,8 +383,10 @@ select,input[type=search]{border-radius:10px}
 .fm{cursor:default}
 .fm:active{background:none}
 .fm .lab{flex:none;width:52px;font-size:15px;color:var(--muted)}
+.fm textarea{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:16px;color:var(--fg);padding:6px 0;resize:vertical;min-height:4.5em;line-height:1.45}
+.fm.fm-ta{align-items:flex-start}.fm.fm-ta .lab{padding-top:6px}
 .fm input,.fm select{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:16px;color:var(--fg);text-align:right;padding:6px 0;-webkit-appearance:none;appearance:none;text-align-last:right}
-.fm input::placeholder{color:var(--chev)}
+.fm textarea::placeholder,.fm input::placeholder{color:var(--chev)}
 .fm select:invalid{color:var(--chev)}
 .fm-note{font-size:12.5px;color:var(--muted);text-align:center;margin:-10px 0 20px}
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translate(-50%,16px);z-index:40;max-width:calc(100% - 40px);padding:12px 18px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
@@ -967,7 +969,7 @@ function build(raw) {
   const journal = [];
   raw.journal.forEach((r, i) => {
     if (![1,2,3,4].some((k) => txt(r[k]) !== '')) return;
-    const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]) };
+    const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]) };
     e.dk = dkey(e.date);
     e.ym = e.dk ? Number(e.dk.slice(0, 6)) : 0;
     const p = [];
@@ -1011,7 +1013,7 @@ function build(raw) {
         amount:amt ? num(amt[1]) : null, title:shop ? shop[1].trim() : ibTitle(body) };
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
-  const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]) })).filter((r) => r.kw);
+  const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]) })).filter((r) => r.kw);
   return { accounts, byName, journal, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
 }
 
@@ -1208,7 +1210,7 @@ const VIEWS = {
   journal() {
     if (isM()) return journalM();
     const q = S.q.toLowerCase();
-    const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.amount].join(' ').toLowerCase().includes(q))).slice().reverse();
+    const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q))).slice().reverse();
     return newBtn() + allBtn(list) + '<div class="card"><div class="ctrl"><input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" style="flex:1;min-width:160px">' +
       '<select id="st"><option value="">전체</option><option value="미확인"' + (S.st === '미확인' ? ' selected' : '') + '>미확인</option><option value="확인"' + (S.st === '확인' ? ' selected' : '') + '>확인</option><option value="오류"' + (S.st === '오류' ? ' selected' : '') + '>오류</option></select>' +
       '<span class="muted" style="font-size:12px">' + list.length + '건 · 최근 입력순</span></div>' +
@@ -1327,7 +1329,7 @@ function summaryM() {
 }
 function journalM() {
   const q = S.q.toLowerCase();
-  const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.amount].join(' ').toLowerCase().includes(q)))
+  const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q)))
     .sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row));
   const segs = [['', '전체'], ['미확인', '미확인'], ['확인', '확인'], ['오류', '오류']];
   return '<label class="ios-search">' + SEARCH_IC + '<input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" enterkeyhint="search" autocomplete="off"></label>' +
@@ -1366,7 +1368,7 @@ function openEntry(row) {
   if (!e) return;
   S.sel = row;
   $('drTitle').textContent = '전표 ' + (e.no || '(번호 없음)');
-  const url = 'https://docs.google.com/spreadsheets/d/' + S.D.sid + '/edit#gid=' + S.D.gid + '&range=A' + e.row + ':K' + e.row;
+  const url = 'https://docs.google.com/spreadsheets/d/' + S.D.sid + '/edit#gid=' + S.D.gid + '&range=A' + e.row + ':L' + e.row;
   const inc = isInc(e);
   const accts = [e.debit, e.credit].filter((n, i, arr) => n && S.D.byName.has(n) && arr.indexOf(n) === i);
   const jl = (side, name) => '<div class="ios-row static"><span class="tag">' + side + '</span><div class="tx"><div class="t1">' + esc(name || '-') + '</div></div><div class="rt amt">' + fmt(e.amount) + '</div></div>';
@@ -1376,7 +1378,8 @@ function openEntry(row) {
     '<div class="acts">' + (e.confirm === '확인' ? '<button class="sbtn" data-wr="unconfirm">미확인으로 되돌리기</button>' : '<button class="pbtn" data-wr="confirm">확인 처리</button>') + '<button class="sbtn" data-wr="edit">수정</button></div>' +
     sec('분개', jl('차변', e.debit) + jl('대변', e.credit)) +
     sec('정보', vrow('날짜', esc(e.date || '-')) + vrow('전표 번호', esc(e.no || '-')) + vrow('시트 위치', '분개장 ' + e.row + '행') +
-      (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '')) +
+      (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '') +
+      (e.note ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">메모</div><div class="t1 wrap" style="white-space:pre-wrap">' + esc(e.note) + '</div></div></div>' : '')) +
     sec('', accts.map((n) => '<div class="ios-row act" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + ' 원장 보기</div></div>' + CHEV + '</div>').join('') +
       '<a class="ios-row act" href="' + esc(url) + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">시트에서 이 행 열기</div></div><span class="val">↗</span></a>');
   $('drBody').scrollTop = 0;
@@ -1420,7 +1423,7 @@ function allBtn(list) {
 }
 function visibleUnconfirmed() {
   const q = S.q.toLowerCase();
-  return S.D.journal.filter((e) => e.confirm === '미확인' && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.amount].join(' ').toLowerCase().includes(q)));
+  return S.D.journal.filter((e) => e.confirm === '미확인' && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q)));
 }
 /* 확인 상태 바꾸기: 화면에 먼저 반영하고, 실패하면 되돌려요 */
 async function setConfirmUI(entries, value) {
@@ -1455,15 +1458,16 @@ function openForm(mode, ctx) {
   $('drTitle').textContent = mode === 'edit' ? '전표 ' + (ctx.no || '') + ' 수정' : '새 전표';
   const fm = (lab, ctl) => '<label class="ios-row fm"><span class="lab">' + lab + '</span>' + ctl + '</label>';
   $('drBody').innerHTML = '<form id="ef" autocomplete="off">' +
-    (ctx.hint ? '<div class="card" style="padding:12px 14px;margin-bottom:20px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-all"><b style="display:block;margin-bottom:4px">알림 원문</b>' + esc(ctx.hint) + '</div>' : '') +
     sec('', fm('날짜', '<input type="date" name="date" required value="' + esc(v.date) + '">') +
       fm('차변', '<select name="debit" required>' + acctOptions(v.debit) + '</select>') +
       fm('대변', '<select name="credit" required>' + acctOptions(v.credit) + '</select>') +
       fm('금액', '<input type="text" name="amount" inputmode="numeric" placeholder="0" required value="' + (v.amount ? fmt(v.amount) : '') + '">') +
       fm('적요', '<input type="text" name="memo" placeholder="예: 점심, 통장 간 이체" value="' + esc(v.memo || '') + '">') +
+      '<label class="ios-row fm fm-ta"><span class="lab">메모</span><textarea name="note" rows="3" placeholder="알림 원문, 참고 사항">' + esc(v.note || '') + '</textarea></label>' +
       fm('상태', '<select name="confirm"><option value="미확인"' + (v.confirm === '확인' ? '' : ' selected') + '>미확인</option><option value="확인"' + (v.confirm === '확인' ? ' selected' : '') + '>확인</option></select>')) +
     (ctx.ib ? sec('분류 규칙', '<label class="ios-row fm"><span class="lab">키워드</span><input type="text" name="kw" value="' + esc(ctx.kw || '') + '" placeholder="알림에 들어 있는 글자"></label>' +
-      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정으로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '알림에 키워드가 있으면 밤 정리 때 적용돼요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') : '') +
+      '<label class="ios-row fm"><span class="lab" style="width:72px">기본 적요</span><input type="text" name="rdesc" value="' + esc(ctx.rule ? ctx.rule.desc || '' : v.memo || '') + '" placeholder="이 키워드면 들어갈 적요"></label>' +
+      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정·적요로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '알림에 키워드가 있으면 밤 정리 때 적용돼요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') : '') +
     '<div class="acts"><button type="submit" class="pbtn ink" id="efSave">저장</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
     '<p class="fm-note">' + (mode === 'edit' ? '저장하면 구글 시트 분개장 ' + ctx.row + '행이 바뀌어요' : ctx.ib ? '저장하면 분개장 맨 아래에 새 전표가 추가되고, 수신함 알림은 처리됨으로 바뀌어요' : '저장하면 분개장 맨 아래에 새 전표가 추가돼요') + '</p></form>';
   $('drBody').scrollTop = 0;
@@ -1472,9 +1476,9 @@ function openForm(mode, ctx) {
 function editEntry(row) {
   const e = S.D.journal.find((x) => x.row === row);
   if (!e) return;
-  openForm('edit', { row:e.row, no:e.no, v:{ date:isoOf(e.dk), debit:e.debit, credit:e.credit, amount:e.amount, memo:e.memo, confirm:e.confirm } });
+  openForm('edit', { row:e.row, no:e.no, v:{ date:isoOf(e.dk), debit:e.debit, credit:e.credit, amount:e.amount, memo:e.memo, note:e.note, confirm:e.confirm } });
 }
-/* 수신함 알림에서 날짜·금액·적요를 미리 채워요 (카드 승인이면 대변을 카드 계정으로) */
+/* 수신함 알림에서 날짜·금액을 채우고, 적요는 추천값(규칙의 기본 적요 → 가맹점명), 메모에는 알림 원문 (카드 승인이면 대변을 카드 계정으로) */
 function entryFromInbox(ibRow) {
   const x = S.D.inbox && S.D.inbox.items.find((i) => i.row === ibRow);
   if (!x) return;
@@ -1490,15 +1494,15 @@ function entryFromInbox(ibRow) {
   const shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(x.text);
   const kw = rule ? rule.kw : shop ? shop[1].trim() : '';
   const credit = rule && rule.credit ? rule.credit : /승인/.test(x.text) && card ? card.name : '';
-  openForm('new', { ib:{ row:x.row, at:x.at }, hint:x.text, kw, rule, v:{ date, debit:rule ? rule.debit : '', credit, amount:x.amount || 0, memo:x.title, confirm:'확인' } });
+  openForm('new', { ib:{ row:x.row, at:x.at }, kw, rule, v:{ date, debit:rule ? rule.debit : '', credit, amount:x.amount || 0, memo:(rule && rule.desc) || x.title, note:x.text, confirm:'확인' } });
 }
 async function submitForm(f) {
   if (S.saving) return;
   const F = S.form;
-  const v = { date:f.date.value, debit:f.debit.value, credit:f.credit.value, amount:num(f.amount.value), memo:f.memo.value.trim(), confirm:f.confirm.value };
+  const v = { date:f.date.value, debit:f.debit.value, credit:f.credit.value, amount:num(f.amount.value), memo:f.memo.value.trim(), note:f.note.value.trim(), confirm:f.confirm.value };
   if (F.ib && f.rule && f.rule.checked) {
     if (!f.kw.value.trim()) { toast('분류 규칙 키워드를 넣거나, 규칙 저장을 꺼 주세요', true); return; }
-    v.rule = { keyword:f.kw.value.trim() };
+    v.rule = { keyword:f.kw.value.trim(), desc:f.rdesc.value.trim() };
   }
   const bad = !v.date ? '날짜를 넣어 주세요' : !v.debit || !v.credit ? '차변·대변 계정을 골라 주세요' : v.debit === v.credit ? '차변과 대변이 같은 계정이에요' : !(v.amount > 0) ? '금액을 넣어 주세요' : '';
   if (bad) { toast(bad, true); return; }
@@ -1536,7 +1540,7 @@ function onWrite(t) {
   else if (w === 'unconfirm' && e) setConfirmUI([e], '미확인');
   else if (w === 'edit' && e) editEntry(e.row);
   else if (w === 'mkentry') entryFromInbox(Number(t.dataset.ibr));
-  else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', confirm:'확인' } });
+  else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', note:'', confirm:'확인' } });
   else if (w === 'cancel') { const F = S.form; if (F && F.mode === 'edit') openEntry(F.row); else if (F && F.ib) openInbox(F.ib.row); else closeEntry(); }
   else if (w === 'confirmall') {
     if (!S.arm) { S.arm = true; render(); clearTimeout(onWrite.tm); onWrite.tm = setTimeout(() => { S.arm = false; render(); }, 4000); return; }

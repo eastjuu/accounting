@@ -26,14 +26,14 @@ const J = [
 const extra = process.argv[2]==='demo';
 if (extra) { J.push([15,'2026-11-04','식비','미지급금_신용카드',12000,'점심',202611,'비용','부채','OK','미확인']); J.push([16,'2026-11-04','식비','없는계정',5000,'오타',202611,'비용','','오류','미확인']); }
 const A = [[101,'현금','자산','차변','현금및예금'],[102,'보통예금_신한(주거래)','자산','차변','현금및예금'],[103,'보통예금_신한(여행자금)','자산','차변','현금및예금'],[104,'보통예금_우리(Npay)','자산','차변','현금및예금'],[105,'보통예금_토스','자산','차변','현금및예금'],[106,'보통예금_부산','자산','차변','현금및예금'],[107,'보통예금_카카오뱅크','자산','차변','현금및예금'],[121,'대여금','자산','차변','기타자산'],[151,'정기적금_주택청약','자산','차변','적금'],[152,'정기적금_신한알쓸','자산','차변','적금'],[153,'정기적금_신한청년','자산','차변','적금'],[171,'투자_토스증권','자산','차변','투자자산'],[201,'미지급금_신용카드','부채','대변','부채'],[202,'대출금','부채','대변','부채'],[301,'자본금','자본','대변','자본'],[401,'급여','수익','대변','수익'],[402,'이자수익','수익','대변','수익'],[403,'기타수익','수익','대변','수익'],[501,'식비','비용','차변','비용'],[502,'교통비','비용','차변','비용'],[511,'기타비용','비용','차변','비용']];
-if (extra) { J.push([17,'2026-11-05','교통비','미지급금_신용카드',1550,'신한카드(0534) 카카오T (알림: 승인)',202611,'비용','부채','OK','미확인']); J.push([18,'2026-11-05','식비','미지급금_신용카드',8900,'신한카드(0534) 김밥천국',202611,'비용','부채','OK','미확인']); J.push([19,'2026-11-02','문화여가','미지급금_신용카드',15000,'CGV',202611,'비용','부채','OK','확인']); }
+if (extra) { J.push([17,'2026-11-05','교통비','미지급금_신용카드',1550,'카카오T',202611,'비용','부채','OK','미확인','[신한카드(0534)승인] 승인금액 1,550원 가맹점명: 카카오T']); J.push([18,'2026-11-05','식비','미지급금_신용카드',8900,'신한카드(0534) 김밥천국',202611,'비용','부채','OK','미확인']); J.push([19,'2026-11-02','문화여가','미지급금_신용카드',15000,'영화',202611,'비용','부채','OK','확인','[신한카드(0534)승인] 승인금액 15,000원 가맹점명: CGV 대구']); }
 const IB = extra ? { id:'IBX', gid:0, rows:[
  [8,'2026-11-05 00:00','[신한카드(0534)승인] 이*주\n- 승인금액: 4,300원(일시불)\n- 승인일시: 11/04 21:03\n- 가맹점명: 지에스25 불로센터점\n- 누적금액: 391,311원','처리됨','15','추정: 편의점이라 식비로 분류'],
  [9,'2026-11-05 09:12','출금\n352,691원 신한카드 입출금(5929)\n11.05 09:12 잔액 2,728,012원','',''],
  [10,'2026-11-05 09:12','출금\n352,691원 신한카드 입출금(5929)\n11.05 09:12 잔액 2,728,012원','',''],
  [11,'2026-11-04 13:51','입금\n195,123원 이동주 입출금(5929)\n11.04 13:51','보류','','통장을 특정할 수 없음(신한 계좌 2개)'],
  [12,'2026-11-04 13:51','입금\n195,123원 이동주 입출금(5929)\n11.04 13:51','중복','','']]} : undefined;
-const raw = { journal:J, journalGid:1449833504, accounts:A, spreadsheetId:'X', at:'2026-11-04 16:50', inbox:IB, rules: extra ? [['지에스25','식비','미지급금_신용카드']] : [] };
+const raw = { journal:J, journalGid:1449833504, accounts:A, spreadsheetId:'X', at:'2026-11-04 16:50', inbox:IB, rules: extra ? [['지에스25','식비','미지급금_신용카드','편의점 간식']] : [] };
 const mock = `<script>window.google={script:{run:(function mk(){let s,f;const o={withSuccessHandler(x){s=x;return o},withFailureHandler(x){f=x;return o},getData(){setTimeout(()=>s(JSON.parse(JSON.stringify(${JSON.stringify(raw)}))),50)}};return new Proxy({}, {get(_,k){const n={...o}; let ss,ff; n.withSuccessHandler=(x)=>{ss=x;return n}; n.withFailureHandler=(x)=>{ff=x;return n}; n.getData=()=>setTimeout(()=>ss(JSON.parse(JSON.stringify(${JSON.stringify(raw)}))),50); return n[k];}})})()}};</script>`;
 fs.writeFileSync('page.html', html.replace('<head>', '<head>' + mock));
 (async () => {
@@ -51,6 +51,13 @@ fs.writeFileSync('page.html', html.replace('<head>', '<head>' + mock));
     }
     await p.evaluate(()=>go('journal')); await p.click('#view [data-entry]'); await p.waitForTimeout(350);
     await p.screenshot({ path: tag+name + '_drawer.png' });
+    if (extra) {
+      await p.evaluate(()=>editEntry(Number(document.querySelector('#view [data-entry]').dataset.entry))); await p.waitForTimeout(350);
+      await p.screenshot({ path: tag+name + '_form_edit.png' });
+      await p.evaluate(()=>entryFromInbox(9)); await p.waitForTimeout(350);
+      await p.screenshot({ path: tag+name + '_form_inbox.png' });
+      await p.evaluate(()=>closeEntry());
+    }
     const txt = await p.evaluate(()=>{go('bs'); return document.querySelector('.fs').innerText;});
     if (name==='pc') console.log(txt);
     await p.close();

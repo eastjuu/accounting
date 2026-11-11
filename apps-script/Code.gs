@@ -23,7 +23,7 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** 화면이 호출: 키가 맞을 때만 분개장(A:K)과 계정과목표(A:E)를 돌려줍니다. */
+/** 화면이 호출: 키가 맞을 때만 분개장(A:L)과 계정과목표(A:E)를 돌려줍니다. */
 function getData(key) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -33,10 +33,11 @@ function getData(key) {
     const sh = ss.getSheetByName(name);
     if (!sh) throw new Error('시트를 찾을 수 없어요: ' + name);
     const last = sh.getLastRow();
-    const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, cols).getValues().map((r) => r.map(conv));
+    const n = Math.min(cols, sh.getMaxColumns());   // 열이 모자라면 빈칸으로 채워요
+    const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, n).getValues().map((r) => r.map(conv).concat(Array(cols - n).fill('')));
     return { rows: rows, gid: sh.getSheetId() };
   };
-  const journal = read('분개장', 11);
+  const journal = read('분개장', 12);
   const accounts = read('계정과목표', 5);
   return {
     journal: journal.rows,
@@ -68,35 +69,49 @@ function readInbox_() {
 }
 
 /* ===================== 분류 규칙 ===================== */
-/** '분류규칙' 시트: A 키워드 / B 차변계정 / C 대변계정 / D 비고 / E 추가일. 알림 원문에 키워드가 있으면 그 계정으로 분류해요. */
+/** '분류규칙' 시트: A 키워드 / B 차변계정 / C 대변계정 / D 비고 / E 추가일 / F 기본 적요. 알림 원문에 키워드가 있으면 그 계정·적요로 분류해요. */
 const RULES = '분류규칙';
 function rulesSheet_(ss) {
   let sh = ss.getSheetByName(RULES);
   if (!sh) {
     sh = ss.insertSheet(RULES);
-    sh.getRange(1, 1, 1, 5).setValues([['키워드', '차변계정', '대변계정', '비고', '추가일']]).setFontWeight('bold');
+    sh.getRange(1, 1, 1, 6).setValues([['키워드', '차변계정', '대변계정', '비고', '추가일', '기본 적요']]).setFontWeight('bold');
     sh.setFrozenRows(1);
   }
+  header_(sh, 6, '기본 적요');
   return sh;
 }
 function readRules_(ss) {
   const sh = ss.getSheetByName(RULES);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 3).getDisplayValues().filter((r) => String(r[0]).trim());
+  const n = Math.min(6, sh.getMaxColumns());
+  return sh.getRange(2, 1, sh.getLastRow() - 1, n).getDisplayValues()
+    .filter((r) => String(r[0]).trim())
+    .map((r) => [r[0], r[1], r[2], n >= 6 ? r[5] : '']);   // 키워드, 차변, 대변, 기본 적요
 }
-function upsertRule_(ss, keyword, debit, credit) {
+function upsertRule_(ss, keyword, debit, credit, desc) {
   const sh = rulesSheet_(ss);
   const kw = String(keyword).trim();
   const last = sh.getLastRow();
   const keys = last < 2 ? [] : sh.getRange(2, 1, last - 1, 1).getDisplayValues().map((r) => String(r[0]).trim().toLowerCase());
   const i = keys.indexOf(kw.toLowerCase());
   const today = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd');
-  if (i >= 0) sh.getRange(i + 2, 2, 1, 4).setValues([[debit, credit, '앱에서 수정', today]]);
-  else sh.appendRow([kw, debit, credit, '앱에서 추가', today]);
+  desc = String(desc || '').trim();
+  if (i >= 0) {
+    sh.getRange(i + 2, 2, 1, 4).setValues([[debit, credit, '앱에서 수정', today]]);
+    sh.getRange(i + 2, 6).setValue(desc);
+  } else sh.appendRow([kw, debit, credit, '앱에서 추가', today, desc]);
+}
+/** 1행 제목 칸이 비어 있으면 채워요 (새 열을 처음 쓸 때). */
+function header_(sh, col, title) {
+  if (sh.getMaxColumns() < col) sh.insertColumnsAfter(sh.getMaxColumns(), col - sh.getMaxColumns());
+  const c = sh.getRange(1, col);
+  if (!String(c.getDisplayValue()).trim()) c.setValue(title).setFontWeight('bold');
 }
 
 /* ===================== 쓰기 ===================== */
 const COL_CONFIRM = 11;   // K열
+const COL_NOTE = 12;      // L열 메모(알림 원문 등). 적요(F)는 사람이 쓰거나 추천값
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -122,7 +137,8 @@ function clean_(ss, f) {
   const amount = Math.round(Number(String(f.amount).replace(/[^\d.-]/g, '')));
   if (!(amount > 0)) throw new Error('금액은 0보다 커야 해요.');
   const confirm = f.confirm === '확인' ? '확인' : '미확인';
-  return { date: date, debit: debit, credit: credit, amount: amount, memo: String(f.memo || '').trim(), confirm: confirm };
+  // memo = 적요(F열), note = 메모(L열)
+  return { date: date, debit: debit, credit: credit, amount: amount, memo: String(f.memo || '').trim(), confirm: confirm, note: String(f.note || '').trim() };
 }
 function log_(ss, action, row, before, after) {
   let sh = ss.getSheetByName('변경이력');
@@ -147,7 +163,7 @@ function setConfirm(key, items, value) {
   });
 }
 
-/** 기존 전표 수정 (B~F열, K열) */
+/** 기존 전표 수정 (B~F열, K열, L열) */
 function updateEntry(key, row, no, f) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   return withLock_(() => {
@@ -155,9 +171,11 @@ function updateEntry(key, row, no, f) {
     const sh = ss.getSheetByName('분개장');
     row = checkRow_(sh, row, no);
     const v = clean_(ss, f);
-    const before = sh.getRange(row, 1, 1, COL_CONFIRM).getDisplayValues()[0];
+    header_(sh, COL_NOTE, '메모');
+    const before = sh.getRange(row, 1, 1, COL_NOTE).getDisplayValues()[0];
     sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
     sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
+    sh.getRange(row, COL_NOTE).setValue(v.note);
     log_(ss, '전표 수정', row, before, v);
     return { row: row };
   });
@@ -195,6 +213,7 @@ function addEntry(key, f, ib) {
       sh.getRange(row, 1, 1, 6).setValues([[no, v.date, v.debit, v.credit, v.amount, v.memo]]);
     }
     sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
+    if (v.note) { header_(sh, COL_NOTE, '메모'); sh.getRange(row, COL_NOTE).setValue(v.note); }
     SpreadsheetApp.flush();
     no = Number(sh.getRange(row, 1).getDisplayValue()) || no;
     // G~J열: 바로 위 행이 수식이면 같은 수식을 이어 붙여요(이미 값·수식이 있으면 그대로)
@@ -209,8 +228,8 @@ function addEntry(key, f, ib) {
       ish.getRange(irow, 3, 1, 3).setValues([['처리됨', no, (memo ? memo + ' / ' : '') + '앱에서 직접 입력']]);
     }
     if (f.rule && String(f.rule.keyword || '').trim()) {
-      upsertRule_(ss, f.rule.keyword, v.debit, v.credit);
-      log_(ss, '분류 규칙', '', null, { keyword: String(f.rule.keyword).trim(), debit: v.debit, credit: v.credit });
+      upsertRule_(ss, f.rule.keyword, v.debit, v.credit, f.rule.desc);
+      log_(ss, '분류 규칙', '', null, { keyword: String(f.rule.keyword).trim(), debit: v.debit, credit: v.credit, desc: String(f.rule.desc || '').trim() });
     }
     log_(ss, '전표 추가' + (ish ? ' (수신함 ' + irow + '행)' : ''), row, null, Object.assign({ no: no }, v));
     return { row: row, no: no };
@@ -230,4 +249,40 @@ function makeKey() {
   const key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
   PropertiesService.getScriptProperties().setProperty('APP_KEY', key);
   Logger.log('비밀키: ' + key);
+}
+
+/* ===================== 1회용: 적요의 "(알림: …)"을 메모(L열)로 옮기기 ===================== */
+/**
+ * 편집기에서 실행. 1) splitMemoPreview() 로 바뀔 내용을 실행 로그에서 확인 → 2) splitMemoRun() 으로 실제 반영.
+ * 적요(F)가 "제목 (알림: 원문)" 꼴이고 메모(L)가 비어 있는 행만 바꿔요. F는 "제목"만, L에는 "원문". 모든 변경은 변경이력에 남아요.
+ */
+function splitMemoPreview() { splitMemo_(false); }
+function splitMemoRun() { splitMemo_(true); }
+function splitMemo_(apply) {
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName('분개장');
+    const last = sh.getLastRow();
+    if (last < 2) { Logger.log('분개장이 비어 있어요.'); return 0; }
+    const n = Math.min(COL_NOTE, sh.getMaxColumns());
+    const vals = sh.getRange(2, 1, last - 1, n).getDisplayValues();
+    const re = /^([\s\S]*?)\s*\(알림\s*[:：]\s*([\s\S]*?)\)?\s*$/;
+    const todo = [];
+    vals.forEach((r, i) => {
+      const memo = String(r[5] || ''), note = n >= COL_NOTE ? String(r[COL_NOTE - 1] || '').trim() : '';
+      const m = re.exec(memo);
+      if (!m || note) return;
+      todo.push({ row: i + 2, no: r[0], before: memo, memo: m[1].trim(), note: m[2].trim() });
+    });
+    todo.forEach((t) => Logger.log('%s행(전표 %s)\n  적요: %s\n  메모: %s', t.row, t.no, t.memo || '(빈칸)', t.note));
+    Logger.log('%s건 %s', todo.length, apply ? '반영했어요.' : '바뀔 예정이에요. 맞으면 splitMemoRun()을 실행하세요.');
+    if (!apply || !todo.length) return todo.length;
+    header_(sh, COL_NOTE, '메모');
+    todo.forEach((t) => {
+      sh.getRange(t.row, 6).setValue(t.memo);
+      sh.getRange(t.row, COL_NOTE).setValue(t.note);
+      log_(ss, '적요→메모 분리', t.row, { memo: t.before }, { memo: t.memo, note: t.note });
+    });
+    return todo.length;
+  });
 }
