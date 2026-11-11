@@ -111,7 +111,9 @@ function header_(sh, col, title) {
 
 /* ===================== 쓰기 ===================== */
 const COL_CONFIRM = 11;   // K열
-const COL_NOTE = 12;      // L열 메모(알림 원문 등). 적요(F)는 사람이 쓰거나 추천값
+const COL_NOTE = 12;
+/** K열 '무효' = 무효 처리된 전표. 행은 남기고 집계(시산표·월별합계 수식, 앱)에서만 빠져요. */
+const VOID = '무효';      // L열 메모(알림 원문 등). 적요(F)는 사람이 쓰거나 추천값
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -157,6 +159,7 @@ function setConfirm(key, items, value) {
     (items || []).forEach((it) => {
       const cell = sh.getRange(Number(it.row), COL_CONFIRM);
       const before = cell.getDisplayValue();
+      if (before === VOID) return;   // 무효 전표는 확인 상태를 바꾸지 않아요 (무효 취소 먼저)
       if (before !== value) { cell.setValue(value); log_(ss, '확인 상태', Number(it.row), before, value); }
     });
     return { n: (items || []).length };
@@ -170,6 +173,7 @@ function updateEntry(key, row, no, f) {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sh = ss.getSheetByName('분개장');
     row = checkRow_(sh, row, no);
+    if (String(sh.getRange(row, COL_CONFIRM).getDisplayValue()).trim() === VOID) throw new Error('무효 처리된 전표예요. 무효 취소 후 수정해 주세요.');
     const v = clean_(ss, f);
     header_(sh, COL_NOTE, '메모');
     const before = sh.getRange(row, 1, 1, COL_NOTE).getDisplayValues()[0];
@@ -177,6 +181,24 @@ function updateEntry(key, row, no, f) {
     sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
     sh.getRange(row, COL_NOTE).setValue(v.note);
     log_(ss, '전표 수정', row, before, v);
+    return { row: row };
+  });
+}
+
+/** 무효 처리(on=true) / 무효 취소(on=false). K열만 바꿔요. 취소하면 '미확인'으로 돌아가요. */
+function voidEntry(key, row, no, on) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName('분개장');
+    row = checkRow_(sh, row, no);
+    const cell = sh.getRange(row, COL_CONFIRM);
+    const before = String(cell.getDisplayValue()).trim();
+    const after = on ? VOID : '미확인';
+    if (on && before === VOID) return { row: row };
+    if (!on && before !== VOID) return { row: row };
+    cell.setValue(after);
+    log_(ss, on ? '전표 무효' : '무효 취소', row, before, after);
     return { row: row };
   });
 }
