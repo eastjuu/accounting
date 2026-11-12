@@ -140,6 +140,7 @@
 
   // 주소 끝에 #reset 을 붙여 열면 저장된 설정을 지우고 다시 입력할 수 있어요
   var DATA = 'ledger-data-cache';
+  var DEMO = 'ledger-demo-mode';   // 샘플 데이터 모드(앱 '전체'에서 켬)
   if (location.hash === '#reset') {
     try { localStorage.removeItem(STORE); localStorage.removeItem(DATA); } catch (e) {}
     history.replaceState(null, '', location.pathname);
@@ -165,7 +166,11 @@
       if (!d || !trusted(ev.origin)) return;
       if (d.type === 'ledger-ready') hide();
       else if (d.type === 'ledger-save' && d.raw) { try { localStorage.setItem(DATA, JSON.stringify(d.raw)); } catch (e) {} }
+      else if (d.type === 'ledger-demo') { try { if (d.on) localStorage.setItem(DEMO, '1'); else localStorage.removeItem(DEMO); } catch (e) {} }
       else if (d.type === 'ledger-hello') {
+        // 샘플 모드면 내 데이터 대신 "샘플로 보여줘"만 보내요 (앱 저장 공간이 지워져도 샘플 모드 유지)
+        var demo = false; try { demo = localStorage.getItem(DEMO) === '1'; } catch (e) {}
+        if (demo) { if (ev.source) ev.source.postMessage({ type: 'ledger-demo', on: true }, ev.origin); return; }
         var raw = null; try { raw = JSON.parse(localStorage.getItem(DATA) || 'null'); } catch (e) {}
         if (raw && ev.source) ev.source.postMessage({ type: 'ledger-cache', raw: raw }, ev.origin);
       }

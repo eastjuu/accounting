@@ -87,6 +87,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - 하단 탭: 홈 / 재무제표(대차 블록 아이콘) / 전표 / 원장 / **전체**(≡). 전체 탭(`moreView`) 아래 `MORE_SUB`: 월별 추이, 수신함, 분류 규칙(`rulesView`), 계정과목(`accountsView`), 정보(`APP_VER`). PC 사이드바엔 '관리' 그룹.
 - 설정 폼: `openRule`(#rf), `openAcct`/`openAcctNew`(#af), 쓰기는 `settingWrite`. 삭제는 두 번 눌러야 실행.
 - 글자 선택 막음(`body{user-select:none}`), 입력칸과 `.sel`(메모·알림 원문)만 복사 가능.
+- **샘플 데이터 모드**(전체 → 보여주기, PC는 사이드바 아래): `setDemo(on)`, `sampleRaw()`(고정 시드로 최근 3개월 가짜 장부·수신함·규칙). 켜져 있으면 `api()`가 모든 쓰기를 거부, `load()`는 서버를 부르지 않음, 늦게 온 실제 데이터는 `S.realRaw`에 보관만. 플래그는 앱 localStorage `ledger-demo` + 껍데기 `ledger-demo-mode` 양쪽(앱 저장 공간이 지워져도 시작 때 실제 데이터가 안 보이게). 홈 상단에 '샘플' 표시.
 - 폰(≤860px)은 iOS식 목록·하단 시트·당겨서 새로고침·push/pop 전환, PC는 사이드바+카드.
 
 ## GitHub 껍데기(`index.html`)와 앱 사이 통신 (postMessage)
@@ -96,6 +97,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 | `ledger-cache` `{raw}` | 껍데기 → 앱 | 마지막 데이터 (앱이 바로 그림) |
 | `ledger-save` `{raw}` | 앱 → 껍데기 | 새 데이터 보관 (localStorage `ledger-data-cache`) |
 | `ledger-ready` | 앱 → 껍데기 | 데이터가 그려졌음 → 시작 화면 걷기 (0.5초 페이드, 15초 안전장치) |
+| `ledger-demo` `{on}` | 앱 ↔ 껍데기 | 샘플 모드 켬/끔 저장(앱→껍데기). 껍데기는 샘플 모드면 `ledger-hello`에 캐시 대신 `{on:true}`로 답함 |
 - 껍데기는 `*.googleusercontent.com` / `script.google.com` 출처만 신뢰.
 - 웹앱 주소·키는 껍데기의 localStorage `ledger-app-settings`에만 저장(저장소에 없음). 주소 끝에 `#reset`이면 초기화.
 
