@@ -117,6 +117,7 @@ input,textarea,select,.sel{-webkit-user-select:text;user-select:text;-webkit-tou
 .mini i.cur{background:var(--accent)}
 .mini-l{display:flex;gap:6px;margin-top:4px;font-size:11px;color:var(--muted)}.mini-l span{flex:1;text-align:center}
 .set-note{font-size:12.5px;color:var(--muted);line-height:1.5;padding:0 16px;margin:-14px 0 22px}
+.demo-chip{display:inline-flex;align-items:center;height:24px;padding:0 10px;margin-left:8px;border-radius:999px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft)}
 .tag-off{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--muted);margin-left:6px;vertical-align:2px}
 
 /* 재무제표 양식 */
@@ -599,7 +600,7 @@ select,input[type=search]{border-radius:10px}
   <aside class="side">
     <div class="brand"><i>₩</i>가계부</div>
     <div id="sidenav"></div>
-    <div class="side-foot">구글 시트 '복식부기_가계부'와 연결된 화면이에요.<br>앱에서 바꾼 내용은 시트에 바로 저장되고 변경이력에 남아요.</div>
+    <div class="side-foot">구글 시트 '복식부기_가계부'와 연결된 화면이에요.<br>앱에서 바꾼 내용은 시트에 바로 저장되고 변경이력에 남아요.<br><label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer"><input type="checkbox" data-act="demo" id="demoPc"> 샘플 데이터로 보기</label></div>
   </aside>
   <div class="main">
     <header class="top">
@@ -690,7 +691,7 @@ const ico = (k, cls) => '<svg' + (cls ? ' class="' + cls + '"' : '') + ' viewBox
 const icon = (k) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + ICONS[k] + '</svg>';
 
 /* ===== 상태 ===== */
-const S = { raw:null, D:null, view:'summary', y:null, m:0, account:null, q:'', st:'', nz:false, sel:null, loading:false, error:null, note:null, stack:[], anim:null, shown:{}, ib:'', hm:0, arm:false, saving:false };
+const S = { raw:null, D:null, view:'summary', y:null, m:0, account:null, q:'', st:'', nz:false, sel:null, loading:false, error:null, note:null, stack:[], anim:null, shown:{}, ib:'', hm:0, arm:false, saving:false, demo:false, realRaw:null };
 
 /* ===== 도구 ===== */
 const $ = (id) => document.getElementById(id);
@@ -974,7 +975,7 @@ function homeView() {
   const c = D.inbox ? ibCounts() : null;
   // 상단: 월 선택 · 수신함 · 새로고침
   let h = '<div class="h-top"><label class="mbtn">' + (S.hm % 100) + '월' + (Math.floor(S.hm / 100) !== new Date().getFullYear() ? ' <span class="muted" style="font-weight:500">' + Math.floor(S.hm / 100) + '</span>' : '') + ico('down', 'dn') +
-    '<select id="homeMonth" aria-label="월 선택">' + months.map((m) => '<option value="' + m + '"' + (m === S.hm ? ' selected' : '') + '>' + Math.floor(m / 100) + '년 ' + (m % 100) + '월</option>').join('') + '</select></label><span class="gap"></span>' +
+    '<select id="homeMonth" aria-label="월 선택">' + months.map((m) => '<option value="' + m + '"' + (m === S.hm ? ' selected' : '') + '>' + Math.floor(m / 100) + '년 ' + (m % 100) + '월</option>').join('') + '</select></label>' + (S.demo ? '<span class="demo-chip">샘플</span>' : '') + '<span class="gap"></span>' +
     '<button class="sq" data-wr="new" aria-label="새 전표 입력">' + ico('plus') + '</button>' +
     '<button class="sq" data-go="inbox" data-ib="" aria-label="알림 수신함">' + ico('tray') + (c && c.wait + c.hold ? '<span class="bd"></span>' : '') + '</button>' +
     '<button class="sq rf' + (S.loading ? ' spin' : '') + '" data-act="reload" aria-label="새로고침">' + ico('refresh') + '</button></div>';
@@ -1502,6 +1503,7 @@ function closeEntry() {
 
 /* ===== 쓰기: 확인 처리 · 전표 수정 · 수신함 알림을 전표로 ===== */
 function api(fn, ...args) {
+  if (S.demo) return Promise.reject(new Error('샘플 데이터에서는 저장되지 않아요'));
   return new Promise((res, rej) => withKey((key) => google.script.run
     .withSuccessHandler(res)
     .withFailureHandler((err) => rej(err && err.message ? err : new Error(String(err))))[fn](key, ...args)));
@@ -1703,8 +1705,9 @@ function moreView() {
     sec('보기', row1(' data-go="monthly"', '월별 추이', '', '') + row1(' data-go="inbox"', '알림 수신함', '', c ? (c.wait ? '대기 ' + c.wait : '') + (c.hold ? (c.wait ? ' · ' : '') + '보류 ' + c.hold : '') : '')) +
     sec('관리', row1(' data-go="rules"', '분류 규칙', '알림 키워드 → 계정·기본 적요', D.rules.length + '개') +
       row1(' data-go="accounts"', '계정과목', '계정 추가 · 사용중지', D.accounts.length + '개' + (off ? ' (중지 ' + off + ')' : ''))) +
+    sec('보여주기', '<label class="ios-row"><div class="tx"><div class="t1">샘플 데이터로 보기</div><div class="t2" style="white-space:normal">다른 사람에게 보여줄 때 · 내 장부는 그대로이고 저장은 막혀요</div></div><input type="checkbox" class="sw" data-act="demo"' + (S.demo ? ' checked' : '') + ' aria-label="샘플 데이터로 보기"></label>') +
     sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
-      '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>' +
+      (S.demo ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
       row1('', '앱 버전', '', APP_VER));
 }
 function rulesView() {
@@ -1881,6 +1884,7 @@ document.addEventListener('change', (ev) => {
   else if (t.id === 'st') { S.st = t.value; render(); }
   else if (t.id === 'acctSel') { S.account = t.value; render(); }
   else if (t.dataset.act === 'nz') { S.nz = t.checked; render(); }
+  else if (t.dataset.act === 'demo') setDemo(t.checked);
 });
 let qTimer;
 document.addEventListener('input', (ev) => {
@@ -1965,6 +1969,7 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() =
 
 /* ===== 불러오기 ===== */
 function load() {
+  if (S.demo) { toast('샘플 데이터예요 · 끄려면 전체 → 샘플 데이터로 보기'); render(); return; }
   if (S.loading) return;
   S.loading = true;
   $('refresh').classList.add('spin');
@@ -1976,8 +1981,10 @@ function load() {
       S.loading = false; S.error = null; S.note = null;
       $('refresh').classList.remove('spin');
       $('ptr').classList.remove('spin');
+      if (S.demo) { S.realRaw = raw; cacheWrite(raw); toShell({ type:'ledger-save', raw }); render(); return; }   // 그사이 샘플 모드가 됐으면 실제 데이터는 보관만
       try {
         if (!S.D) S.reveal = true;   // 틀만 보이던 상태에서 처음 채워질 때
+        S.realRaw = raw;
         S.D = build(raw);
         if (!S.y || !S.D.years.includes(S.y)) S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear();
         cacheWrite(raw);
@@ -1997,6 +2004,93 @@ function load() {
     })
     .getData(key));
 }
+/* ===== 샘플 데이터 모드: 다른 사람에게 보여줄 때. 저장은 막고, 실제 데이터는 화면에 그리지 않아요 ===== */
+const DEMO_KEY = 'ledger-demo';
+function demoFlag() { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch (e) { return false; } }
+function setDemo(on, quiet) {
+  S.demo = on;
+  try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY); } catch (e) {}
+  toShell({ type:'ledger-demo', on });
+  closeEntry(); S.stack = []; S.st = ''; S.q = ''; S.ib = ''; S.account = null; S.hm = 0; S.tabI = null;
+  if (on) S.D = build(sampleRaw());
+  else S.D = S.realRaw ? build(S.realRaw) : null;
+  if (S.D) S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear();
+  const pc = $('demoPc'); if (pc) pc.checked = on;
+  render();
+  if (!quiet) toast(on ? '샘플 데이터로 보여줘요 · 내 장부는 그대로예요' : '내 데이터로 돌아왔어요');
+  if (!on) load();
+}
+/* 최근 3개월치 가짜 장부 (매번 같은 결과가 나오게 고정 시드) */
+function sampleRaw() {
+  let seed = 20261112;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const amt = (lo, hi, step) => Math.round((lo + rnd() * (hi - lo)) / (step || 100)) * (step || 100);
+  const A = [[101,'현금','자산','차변','현금및예금'],[102,'보통예금_A은행(주거래)','자산','차변','현금및예금'],[103,'보통예금_B은행(생활비)','자산','차변','현금및예금'],[104,'보통예금_C인터넷뱅크','자산','차변','현금및예금'],
+    [120,'미수금','자산','차변','기타자산'],[151,'정기적금_내집마련','자산','차변','적금'],[171,'투자_증권계좌','자산','차변','투자자산'],[201,'미지급금_신용카드','부채','대변','부채'],[301,'자본금','자본','대변','자본'],
+    [401,'급여','수익','대변','수익'],[402,'이자수익','수익','대변','수익'],[403,'기타수익','수익','대변','수익'],
+    [501,'식비','비용','차변','비용'],[502,'교통비','비용','차변','비용'],[503,'통신비','비용','차변','비용'],[504,'의료비','비용','차변','비용'],[505,'생활용품','비용','차변','비용'],[506,'문화여가','비용','차변','비용'],
+    [507,'교육비','비용','차변','비용'],[508,'경조사비','비용','차변','비용'],[509,'보험료','비용','차변','비용'],[510,'주거비','비용','차변','비용'],[511,'기타비용','비용','차변','비용']].map((r) => r.concat(['', '']));
+  const TY = new Map(A.map((r) => [r[1], r[2]]));
+  const now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const md = (d) => String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+  const E = [];
+  const add = (d, dr, cr, a, memo, note) => E.push({ d:iso(d), dr, cr, a, memo, note:note || '' });
+  const CARD = '미지급금_신용카드', MAIN = '보통예금_A은행(주거래)', LIFE = '보통예금_B은행(생활비)';
+  const hm = () => String(11 + Math.floor(rnd() * 9)).padStart(2, '0') + ':' + String(Math.floor(rnd() * 60)).padStart(2, '0');
+  [[MAIN, 3200000], [LIFE, 450000], ['보통예금_C인터넷뱅크', 1800000], ['정기적금_내집마련', 6000000], ['투자_증권계좌', 4500000], ['현금', 50000]].forEach(([n, v]) => add(start, n, '자본금', v, '기초잔액'));
+  const LUNCH = ['동네김밥', '점심식당', '칼국수집', '한그릇 덮밥', '샐러드 키친', '분식나라'], CAFE = ['카페 모먼트', '베이커리 온', '커피 한잔'], DINNER = ['고깃집 화로', '파스타 하우스', '동네 치킨', '초밥 가게'];
+  const FUN = ['영화관', '전시회', '볼링장', '서점'], GOODS = ['생활마트', '잡화점', '온라인몰'];
+  const cardSum = {};
+  const card = (d, acct, a, shop) => { add(d, acct, CARD, a, shop, '[A카드 승인] ' + fmt(a) + '원 일시불\n' + md(d) + ' ' + hm() + ' ' + shop); const k = d.getFullYear() * 100 + d.getMonth() + 1; cardSum[k] = (cardSum[k] || 0) + a; };
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const day = new Date(d), dom = day.getDate(), wd = day.getDay(), weekday = wd > 0 && wd < 6;
+    const ym = day.getFullYear() * 100 + day.getMonth() + 1, prevYm = day.getMonth() === 0 ? (day.getFullYear() - 1) * 100 + 12 : ym - 1;
+    if (dom === 1) add(day, '주거비', MAIN, 650000, '월세·관리비');
+    if (dom === 5) add(day, '정기적금_내집마련', MAIN, 500000, '적금 납입');
+    if (dom === 10) card(day, '통신비', 55000, '통신요금');
+    if (dom === 12) add(day, '교육비', LIFE, 39000, '온라인 강의');
+    if (dom === 14 && cardSum[prevYm]) add(day, CARD, MAIN, cardSum[prevYm], 'A카드 대금');
+    if (dom === 15) add(day, '보험료', LIFE, 89000, '실손보험');
+    if (dom === 20) add(day, LIFE, MAIN, 300000, '생활비 이체');
+    if (dom === 25) add(day, MAIN, '급여', 3450000, '급여');
+    if (dom === 26) add(day, '투자_증권계좌', MAIN, 200000, '적립식 투자');
+    if (weekday) {
+      if (rnd() < .8) card(day, '식비', amt(8000, 13000, 500), pick(LUNCH));
+      if (rnd() < .5) card(day, '식비', amt(4500, 6500, 500), pick(CAFE));
+      if (rnd() < .9) add(day, '교통비', LIFE, amt(2900, 4200, 50), '교통카드');
+    } else {
+      if (rnd() < .5) card(day, '식비', amt(25000, 60000, 1000), pick(DINNER));
+      if (rnd() < .4) card(day, '문화여가', amt(15000, 50000, 1000), pick(FUN));
+    }
+    if (rnd() < .12) card(day, '생활용품', amt(8000, 40000, 100), pick(GOODS));
+    if (rnd() < .03) add(day, '의료비', LIFE, amt(5000, 25000, 100), '동네의원');
+    if (dom === new Date(day.getFullYear(), day.getMonth() + 1, 0).getDate()) add(day, '보통예금_C인터넷뱅크', '이자수익', amt(1500, 2600, 1), '예금이자');
+  }
+  add(new Date(start.getFullYear(), start.getMonth() + 1, 18), '경조사비', MAIN, 100000, '친구 결혼 축의금');
+  E.sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
+  const recent = iso(new Date(today.getTime() - 2 * 864e5));
+  const J = E.map((e, i) => [i + 1, e.d, e.dr, e.cr, e.a, e.memo, Number(e.d.slice(0, 4) + e.d.slice(5, 7)), TY.get(e.dr), TY.get(e.cr), 'OK', e.d >= recent && e.cr === CARD ? '미확인' : '확인', e.note]);
+  const cardRows = J.filter((r) => r[3] === CARD);
+  const dup = cardRows.filter((r) => r[1] < recent).pop();   // 중복으로 들어와 무효 처리한 예시
+  if (dup) J.push([J.length + 1, dup[1], dup[2], dup[3], dup[4], dup[5] + ' (중복)', dup[6], dup[7], dup[8], '', '무효', dup[11]]);
+  const t = (dd, h) => iso(new Date(today.getTime() - dd * 864e5)) + ' ' + h;
+  const nth = (n) => String((cardRows[cardRows.length - n] || [''])[0]);
+  const inbox = { id:'demo', gid:0, rows:[
+    [9, t(0, '12:41'), '[A카드 승인] 11,500원 일시불\n' + md(today) + ' 12:41 점심식당', '', '', ''],
+    [8, t(0, '08:12'), '[B은행] 출금 4,150원\n교통카드 충전', '', '', ''],
+    [7, t(1, '19:30'), '[C인터넷뱅크] 입금 120,000원\n홍길동', '보류', '', '받을 돈인지 확인 필요'],
+    [6, t(1, '12:20'), '[A카드 승인] 9,000원 일시불\n점심식당', '중복', '', ''],
+    [5, t(1, '12:20'), '[A카드 승인] 9,000원 일시불\n점심식당', '처리됨', nth(1), ''],
+    [4, t(2, '18:02'), '[A카드 승인] 저녁', '처리됨', nth(2), ''],
+  ] };
+  const rules = [['점심식당', '식비', CARD, '점심', 2], ['카페 모먼트', '식비', CARD, '커피', 3], ['교통카드', '교통비', LIFE, '교통카드', 4], ['통신요금', '통신비', CARD, '휴대폰 요금', 5], ['실손보험', '보험료', LIFE, '실손보험', 6], ['생활마트', '생활용품', CARD, '', 7]];
+  const at = iso(now) + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  return { journal:J, journalGid:0, accounts:A, spreadsheetId:'demo', inbox, rules, at };
+}
+
 /* 접속 키: 웹앱 주소의 ?k= 값을 읽어 서버에 함께 보냅니다 */
 let APP_KEY = null;
 function withKey(cb) {
@@ -2015,10 +2109,13 @@ const inShell = window.top !== window;
 function toShell(msg) { if (inShell) { try { window.top.postMessage(msg, '*'); } catch (e) {} } }
 function readyOnce() { if (readyOnce.done) return; readyOnce.done = true; toShell({ type:'ledger-ready' }); }
 window.addEventListener('message', (ev) => {
-  if (ev.source !== window.top || !ev.data || ev.data.type !== 'ledger-cache') return;
+  if (ev.source !== window.top || !ev.data) return;
+  if (ev.data.type === 'ledger-demo') { if (ev.data.on && !S.demo) setDemo(true, true); return; }
+  if (ev.data.type !== 'ledger-cache' || S.demo) return;
   const raw = ev.data.raw;
   if (S.D || !raw || !Array.isArray(raw.journal) || !Array.isArray(raw.accounts)) return;   // 이미 그렸거나 비어 있으면 무시
   try {
+    S.realRaw = raw;
     S.D = build(raw);
     S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear();
     S.reveal = true;
@@ -2027,8 +2124,9 @@ window.addEventListener('message', (ev) => {
   } catch (e) {}
 });
 (function start() {
+  if (demoFlag()) { setDemo(true, true); readyOnce(); return; }   // 샘플 모드였으면 실제 데이터는 아예 그리지 않아요
   const c = cacheRead();
-  if (c) { try { S.D = build(c); S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear(); S.reveal = true; } catch (e) { S.D = null; } }
+  if (c) { try { S.realRaw = c; S.D = build(c); S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear(); S.reveal = true; } catch (e) { S.D = null; } }
   render();
   if (S.D || !inShell) readyOnce();      // 이 기기에 저장된 데이터로 바로 그렸으면 준비 완료
   else toShell({ type:'ledger-hello' }); // 아니면 껍데기에 저장된 데이터를 달라고 해요
