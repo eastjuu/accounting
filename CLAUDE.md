@@ -23,6 +23,7 @@
 │  └─ Index.html      앱 화면 전체 (HTML+CSS+JS 한 파일)
 ├─ tools/preview.js   가짜 서버로 앱 화면을 띄워 캡처하는 테스트 (Playwright)
 ├─ CLAUDE.md
+├─ APP_SPEC.md        SwiftUI 네이티브 앱으로 옮기기 위한 제품 명세서·인수인계 문서
 └─ SETUP.md           사람용 준비 순서
 ```
 > 저장소가 공개라서 apps-script 코드와 시트 ID도 공개돼요. 시트는 공유돼 있지 않아 ID만으로는 열 수 없고, 접속 키는 코드가 아니라 스크립트 속성에 있어요.
