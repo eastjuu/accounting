@@ -138,6 +138,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - **껍데기의 시작 화면(`.sp-m`)은 앱 홈의 틀과 위치가 똑같아야 전환이 자연스러움.** 홈 레이아웃(간격, 카드, 상단 버튼)을 바꾸면 `index.html`의 시작 화면과 `homeSkeleton()`도 같이 맞추기.
 - 하단 탭 바: `bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px))`.
 - 입력창 글자 크기는 16px 이상(작으면 아이폰이 확대함).
+- 확대 막기(2026-11-16): viewport `maximum-scale=1, user-scalable=no` + `touch-action: manipulation`(두 번 탭) + `gesturestart`·두 손가락 `touchmove` preventDefault(사파리가 viewport를 무시할 때). Index.html head 스크립트와 index.html 양쪽(document.open이 이전 문서의 이벤트를 지우므로 앱 화면에도 따로 있음).
 
 ## 디자인
 - 포인트 주황 + 검은 글자·아이콘. 토큰: 라이트 `--bg #f3f4f6, --panel #fff, --fg #111214, --muted #8b9099, --accent #f0712c` / 다크 `--bg #14171d, --panel #1d2027, --fg #f2f3f5, --accent #ff8a4c`.
