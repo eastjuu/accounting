@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="가계부">
@@ -24,6 +24,9 @@
     try { cfg = JSON.parse(localStorage.getItem(S) || 'null'); } catch (e) {}
     var save = function () { try { localStorage.setItem(S, JSON.stringify(cfg)); } catch (e) {} };
     var clean = function () { history.replaceState(null, '', location.pathname); };
+    // 확대 막기(핀치·제스처): 설정 화면·예전 방식에서도
+    document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
     if (has('reset')) {
       try { [S, 'ledger-data-cache', 'ledger-cache-v1', 'ledger-app-html'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
       clean(); return;
@@ -45,6 +48,7 @@
   html, body { margin: 0; height: 100%; background: #f3f4f6; font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
   @media (prefers-color-scheme: dark) { html, body { background: #14171d; color: #e6e8ec; } }
   body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  html, body { touch-action: manipulation; }   /* 두 번 탭 확대 막기 */
   input, textarea, select { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
   #app { position: fixed; top: env(safe-area-inset-top); left: 0; right: 0; bottom: 0; width: 100%; height: calc(100% - env(safe-area-inset-top)); border: 0; }
   #setup { max-width: 420px; margin: 0 auto; padding: calc(40px + env(safe-area-inset-top)) 20px 40px; }

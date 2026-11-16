@@ -3,7 +3,7 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="가계부">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -26,6 +26,9 @@ if (WEB) {
   if (!(CFG && CFG.url && CFG.key) && location.protocol === 'https:') location.replace(/\/apps-script\//.test(location.pathname) ? '../' : './');
   document.documentElement.classList.add('web');
 }
+/* 확대 막기: 핀치(두 손가락)·제스처. 두 번 탭 확대는 CSS touch-action으로 막아요. 사파리가 viewport 설정을 무시할 때를 대비해 JS로도 막아요 */
+document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', function (e) { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
 </script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
@@ -49,6 +52,7 @@ if (WEB) {
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;-webkit-text-size-adjust:100%}
 html.web body{box-sizing:border-box;padding-top:env(safe-area-inset-top)}
+html,body{touch-action:manipulation}
 button,select,input{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:220px 1fr;height:100%}
 
@@ -703,7 +707,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16f';
+const APP_VER = '2026.11.16g';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */

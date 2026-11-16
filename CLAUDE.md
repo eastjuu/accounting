@@ -35,7 +35,7 @@
 | GitHub Pages | `https://eastjuu.github.io/accounting/` (저장소 `eastjuu/accounting`) |
 | Apps Script 웹앱 배포 ID | `AKfycbw37FbwCQG84QMFl3i5w_ZhWj44Nb5zCpn1oqgyyRPHiVQLoUPSKcYMyCmXDQrwAL7i1Q` |
 | 접속 키 | 스크립트 속성 `APP_KEY` (코드·저장소에 절대 넣지 않기). 새로 만들 땐 `makeKey()` 실행 |
-| 예약 작업 | Claude 앱의 예약 작업 "가계부 수신함 정리", 매일 00:05 KST. 지시문 수정은 Claude 앱에서 |
+| 예약 작업 | "가계부 수신함 정리" (`trig_01Jg4MR1aiN3eAssUAvFDxun`), 매일 00:05 KST, 클라우드 환경 "개인가계부"에서 새 세션으로 실행. API 방식(`docs/nightly-task.md`). Claude Code에서 `update_trigger`로 수정 가능 |
 
 ## 시트 구조 (가계부)
 - **분개장** A 전표번호 / B 날짜 / C 차변계정 / D 대변계정 / E 금액 / F 적요 / G 연월 / H 차변구분 / I 대변구분 / J 검증 / K 확인 / L 메모 / M 묶음
@@ -87,7 +87,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - **예약 작업 API** `taskInbox(key)` / `taskApply(key, ops)` (doPost `fn`, 키는 스크립트 속성 `TASK_KEY`(`makeTaskKey()`) 또는 APP_KEY):
   - `taskInbox`: 대기 알림(id·원문·서버 추천 sug) + 계정·규칙 + 최근 전표 150건.
   - `taskApply`: ops `[{id, status, memo, entries[단일 또는 lines], voids[{row,no,reason}]}]`. 알림마다 먼저 전부 검사(clean_, 무효는 '미확인'·단일 전표만)하고 통과한 것만 쓰기, 이미 처리된 알림은 skipped, 전표는 항상 '미확인', 수신함 E에 `[예약]`, 변경이력 `[예약] …`. 근거 없는 '처리됨'(전표·무효 없고 '거래 아님' 아님)은 거부.
-  - 지시문 원본: `docs/nightly-task.md`. 클라우드 환경에 `script.google.com`·`script.googleusercontent.com` 허용 + 환경 변수 `LEDGER_API_URL`·`LEDGER_TASK_KEY` 필요(2026-11-16 기준 사용자 설정 대기, 예약 작업은 아직 시트 직접 쓰기 방식).
+  - 지시문 원본: `docs/nightly-task.md`. 클라우드 환경에 `script.google.com`·`script.googleusercontent.com` 허용 + 환경 변수 `LEDGER_API_URL`·`LEDGER_TASK_KEY` 필요(2026-11-16 설정 완료·연결 시험 통과 → 예약 작업 지시문을 API 방식으로 전환. 예약 작업은 시트를 직접 쓰지 않음).
 - `doPost(e)` — 단축어 입력. 본문 JSON `{k, text}`, 키는 스크립트 속성 `INGEST_KEY`(앱 접속 키와 별개, `makeIngestKey()`로 발급). `ingest_`: 최근 300건에 같은 원문이 있으면 `중복` → `guess_`(가장 긴 키워드 규칙, 금액 `n원` 첫 번째, 날짜 `MM/DD hh:mm`·`MM.DD hh:mm` 없으면 오늘, 대변 빈 규칙+`승인`이면 첫 카드 부채 계정, 적요=기본 적요→가맹점명→키워드, `취소` 들어가면 대기) → `clean_` 통과 시 `미확인` 전표 + `처리됨`, 아니면 C 빈칸·E에 이유. 응답 `{ok, status, no?, msg}`.
   - ⚠️ 체크카드 이중 알림(승인 + 출금)이 둘 다 규칙에 맞으면 전표가 두 번 생길 수 있음 → 미확인으로 남으니 앱에서 무효 처리.
 - `splitMemoPreview()` / `splitMemoRun()` — 1회용. 적요의 `(알림: …)`을 L열로 옮김(L이 빈 행만, 변경이력 기록). 편집기에서 실행.
@@ -138,6 +138,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - **껍데기의 시작 화면(`.sp-m`)은 앱 홈의 틀과 위치가 똑같아야 전환이 자연스러움.** 홈 레이아웃(간격, 카드, 상단 버튼)을 바꾸면 `index.html`의 시작 화면과 `homeSkeleton()`도 같이 맞추기.
 - 하단 탭 바: `bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px))`.
 - 입력창 글자 크기는 16px 이상(작으면 아이폰이 확대함).
+- 확대 막기(2026-11-16): viewport `maximum-scale=1, user-scalable=no` + `touch-action: manipulation`(두 번 탭) + `gesturestart`·두 손가락 `touchmove` preventDefault(사파리가 viewport를 무시할 때). Index.html head 스크립트와 index.html 양쪽(document.open이 이전 문서의 이벤트를 지우므로 앱 화면에도 따로 있음).
 
 ## 디자인
 - 포인트 주황 + 검은 글자·아이콘. 토큰: 라이트 `--bg #f3f4f6, --panel #fff, --fg #111214, --muted #8b9099, --accent #f0712c` / 다크 `--bg #14171d, --panel #1d2027, --fg #f2f3f5, --accent #ff8a4c`.
