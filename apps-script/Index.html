@@ -402,6 +402,25 @@ select,input[type=search]{border-radius:10px}
 .fm textarea::placeholder,.fm input::placeholder{color:var(--chev)}
 .fm select:invalid{color:var(--chev)}
 .fm-note{font-size:12.5px;color:var(--muted);text-align:center;margin:-10px 0 20px}
+/* 여러 줄 분개: 상세 표(vt)와 입력 줄(jl) — 회계프로그램처럼 구분 · 계정과목 · 차변 · 대변 */
+.vt-h,.vt-r{display:grid;grid-template-columns:34px minmax(0,1fr) 76px 76px;gap:6px;align-items:center;padding:10px 16px}
+.vt-h{font-size:12px;color:var(--muted);padding-bottom:6px}.vt-h span:nth-child(n+3){text-align:right}
+.vt-r{border-top:1px solid var(--line);font-size:15px}
+.vt-r .tag{font-size:12.5px;color:var(--muted)}
+.vt-a{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vt-a em{font-style:normal;color:var(--muted);font-size:12px;margin-right:6px;font-variant-numeric:tabular-nums}
+.vt-r .num{text-align:right;font-variant-numeric:tabular-nums}
+.vt-f{font-weight:600}.vt-f span:nth-child(2){color:var(--muted);font-weight:500}
+.jl-row{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,1fr) 30px;grid-template-areas:"tag acct acct del" ". dr cr .";gap:8px;align-items:center;padding:10px 10px 12px 16px;border-bottom:1px solid var(--line)}
+.jl-row .jl-tag{grid-area:tag;font-size:12.5px;color:var(--muted)}
+.jl-row select{grid-area:acct;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:16px;color:var(--fg);padding:6px 0;-webkit-appearance:none;appearance:none}
+.jl-row select:invalid{color:var(--chev)}
+.jl-row input{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);font:inherit;font-size:16px;text-align:right;padding:8px 10px;outline:none;font-variant-numeric:tabular-nums}
+.jl-row input:focus{border-color:var(--accent)}
+.jl-row [name=ldr]{grid-area:dr}.jl-row [name=lcr]{grid-area:cr}
+.jl-del{grid-area:del;border:0;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px;cursor:pointer}
+button.jl-add{width:100%;border:0;background:none;font:inherit;font-size:15px;color:var(--accent);font-weight:600;justify-content:center}
+.jl-sum{display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted)}
+.jl-sum b{color:var(--fg);font-variant-numeric:tabular-nums}
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translate(-50%,16px);z-index:40;max-width:calc(100% - 40px);padding:12px 18px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.bad{background:var(--bad);color:#fff}
@@ -656,7 +675,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16';
+const APP_VER = '2026.11.16b';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -720,11 +739,11 @@ function dLabel(dk) {
 const atLabel = (at) => { const m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}:\d{2})/.exec(at || ''); return m ? +m[2] + '월 ' + +m[3] + '일 ' + m[4] : String(at || ''); };
 const stMatch = (e) => (!S.st ? !e.void : S.st === '무효' ? e.void : S.st === '오류' ? e.problems.length > 0 : e.confirm === S.st);
 const stTag = (e) => e.void ? '<div class="sm st-void">무효</div>' : e.problems.length && !e.valid ? '<div class="sm st-bad">오류</div>' : e.confirm === '미확인' ? '<div class="sm st-warn">미확인</div>' : '';
-const isInc = (e) => { const a = S.D.byName.get(e.credit); return !!a && a.type === '수익'; };
+const isInc = (e) => e.lines.filter((l) => l.side === '대').every((l) => { const a = S.D.byName.get(l.acct); return !!a && a.type === '수익'; });
 function jrow(e) {
   const inc = isInc(e);
-  return '<div class="ios-row" data-entry="' + e.row + '"><div class="tx"><div class="t1">' + esc(memoT(e.memo) || (e.debit + ' / ' + e.credit)) + '</div><div class="t2">' + esc(e.debit) + ' / ' + esc(e.credit) + '</div></div>' +
-    '<div class="rt"><div class="amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.amount) + '</div>' + stTag(e) + '</div></div>';
+  return '<div class="ios-row" data-entry="' + e.row + '"><div class="tx"><div class="t1">' + esc(memoT(e.memo) || vSides(e)) + '</div><div class="t2">' + esc(vSides(e)) + (e.grpRows ? ' · ' + e.lines.length + '줄' : '') + '</div></div>' +
+    '<div class="rt"><div class="amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.total) + '</div>' + stTag(e) + '</div></div>';
 }
 /* 날짜별로 묶은 목록 */
 function byDate(items, dkOf, rowOf) {
@@ -800,7 +819,7 @@ function openInbox(row) {
   const x = S.D.inbox && S.D.inbox.items.find((i) => i.row === row);
   if (!x) return;
   $('drTitle').textContent = '알림';
-  const entries = x.nos.map((no) => S.D.journal.find((e) => e.no === no)).filter(Boolean);
+  const entries = [...new Set(x.nos.map((no) => leadOf(S.D.journal.find((e) => e.no === no))).filter(Boolean))];
   const ib = S.D.inbox, r = Math.abs(x.row);   // 음수 행 = 가계부 안 '수신함' 시트(단축어가 바로 보낸 알림)
   const url = 'https://docs.google.com/spreadsheets/d/' + (x.row < 0 ? ib.id2 : ib.id) + '/edit#gid=' + (x.row < 0 ? ib.gid2 : ib.gid) + '&range=A' + r + ':E' + r;
   $('drBody').innerHTML =
@@ -907,7 +926,7 @@ function headline(p) {
   const ydk = yd.getFullYear() + String(yd.getMonth() + 1).padStart(2, '0') + String(yd.getDate()).padStart(2, '0');
   const D = S.D;
   const c = D.inbox ? ibCounts() : { wait:0, hold:0 };
-  const unconf = D.journal.filter((e) => e.confirm === '미확인').length;
+  const unconf = D.list.filter((e) => e.confirm === '미확인').length;
   const yv = dayExp(ydk);
   let msg;
   if (c.hold) msg = '보류된 알림 <em>' + c.hold + '건</em>을 확인해 주세요';
@@ -971,8 +990,8 @@ function homeView() {
   const cardNames = new Set(cards.map((a) => a.name));
   const curYm = new Date().getFullYear() * 100 + new Date().getMonth() + 1;
   const cardUse = D.valid.filter((e) => e.ym === curYm && cardNames.has(e.credit) && D.byName.get(e.debit).type === '비용').reduce((s, e) => s + e.amount, 0);
-  const unconf = D.journal.filter((e) => e.confirm === '미확인').length;
-  const conf = D.journal.filter((e) => e.confirm === '확인').length;
+  const unconf = D.list.filter((e) => e.confirm === '미확인').length;
+  const conf = D.list.filter((e) => e.confirm === '확인').length;
   const c = D.inbox ? ibCounts() : null;
   // 상단: 월 선택 · 수신함 · 새로고침
   let h = '<div class="h-top"><label class="mbtn">' + (S.hm % 100) + '월' + (Math.floor(S.hm / 100) !== new Date().getFullYear() ? ' <span class="muted" style="font-weight:500">' + Math.floor(S.hm / 100) + '</span>' : '') + ico('down', 'dn') +
@@ -990,7 +1009,7 @@ function homeView() {
   // 위젯 카드
   const wgH = '<div class="wgrid o2">' +
     wcard(' data-go="journal" data-st="미확인"', 'check', '미확인 전표', cnt('w1', unconf), '건', unconf ? 'hot' : '',
-      mbar([[conf, 'var(--fg)'], [unconf, 'var(--accent)'], [D.issues.length, 'var(--bad)']]) + '<div class="t">확인 ' + conf + ' / 전체 ' + D.journal.filter((e) => !e.void).length + (D.issues.length ? ' · 오류 ' + D.issues.length : '') + '</div>') +
+      mbar([[conf, 'var(--fg)'], [unconf, 'var(--accent)'], [D.issues.length, 'var(--bad)']]) + '<div class="t">확인 ' + conf + ' / 전체 ' + D.list.filter((e) => !e.void).length + (D.issues.length ? ' · 오류 ' + D.issues.length : '') + '</div>') +
     wcard(' data-go="inbox" data-ib=""', 'tray', '처리할 알림', c ? cnt('w2', c.wait + c.hold) : '-', '건', c && c.hold ? 'hot' : '',
       c ? mbar([[c.wait, 'var(--accent)'], [c.hold, 'var(--fg)'], [c.dup, 'var(--c4)'], [c.done, 'var(--chev)']]) + '<div class="t">대기 ' + c.wait + ' · 보류 ' + c.hold + ' · 중복 ' + c.dup + '</div>' : '<div class="t">Code.gs 업데이트 필요</div>') +
     wcard(' data-go="bs"', 'wallet', '순자산', cnt('w3', t.assets - t.liab), '원', 'money',
@@ -1003,7 +1022,7 @@ function homeView() {
   const ctot = Math.max(1, p.cats.reduce((s, x) => s + x[1], 0));
   const catH = '<div class="o4">' + hcard('분류별 지출', p.mo + '월', p.cats.length ? '<div class="ios-list">' + p.cats.map(([n, v]) => '<div class="ios-row" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + '</div><div class="pbar"><i style="width:' + (v / p.cats[0][1] * 100) + '%"></i></div></div><div class="rt"><div class="amt">' + fmt(v) + '</div><div class="sm">' + Math.round(v / ctot * 100) + '%</div></div></div>').join('') + '</div>' : '<div class="empty">' + p.mo + '월 지출이 아직 없어요</div>') + '</div>';
   // 최근 전표
-  const recent = D.journal.filter((e) => !e.void).sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row)).slice(0, 5);
+  const recent = D.list.filter((e) => !e.void).sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row)).slice(0, 5);
   const recH = '<div class="o5">' + hcard('최근 전표', '', recent.length ? '<div class="ios-list">' + recent.map(jrow).join('') + '</div>' : '<div class="empty">아직 기록된 전표가 없어요</div>', ' data-go="journal" data-st=""') + '</div>';
   // 자산 구성
   const parts = [['현금및예금', t.cash, 'var(--c1)'], ['적금', t.savings, 'var(--c3)'], ['투자자산', t.invest, 'var(--c4)'], ['기타자산', t.other, 'var(--c2)']];
@@ -1058,7 +1077,7 @@ function build(raw) {
   const journal = [];
   raw.journal.forEach((r, i) => {
     if (![1,2,3,4].some((k) => txt(r[k]) !== '')) return;
-    const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]) };
+    const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]), grp:txt(r[12]) };
     e.dk = dkey(e.date);
     e.ym = e.dk ? Number(e.dk.slice(0, 6)) : 0;
     e.void = e.confirm === '무효';   // 무효 전표: 목록엔 남고 집계·원장에서 빠짐
@@ -1074,6 +1093,21 @@ function build(raw) {
     e.valid = !p.some((x) => !x.startsWith('시트 검증'));
     journal.push(e);
   });
+  // 여러 줄 전표(M열 묶음): 첫 행이 대표(lead), 나머지는 sub. 목록·상세는 대표만, 집계는 행 단위 그대로
+  journal.forEach((e) => { e.lines = [{ side:'차', acct:e.debit, amount:e.amount }, { side:'대', acct:e.credit, amount:e.amount }]; e.total = e.amount; });
+  const gmap = new Map();
+  journal.forEach((e) => { if (e.grp) { if (!gmap.has(e.grp)) gmap.set(e.grp, []); gmap.get(e.grp).push(e); } });
+  gmap.forEach((rows) => {
+    if (rows.length < 2) return;
+    const lead = rows[0];
+    lead.grpRows = rows;
+    rows.slice(1).forEach((x) => { x.sub = true; x.lead = lead; });
+    lead.lines = vLines(rows);
+    lead.total = rows.reduce((t, x) => t + x.amount, 0);
+    lead.search = rows.map((x) => [x.no, x.debit, x.credit, x.amount, x.memo, x.note].join(' ')).join(' ');
+    if (rows.some((x) => x.confirm === '미확인')) lead.confirm = lead.void ? lead.confirm : '미확인';
+  });
+  const list = journal.filter((e) => !e.sub);
   const valid = journal.filter((e) => e.valid);
   const flows = new Map(accounts.map((a) => [a.name, []]));
   valid.forEach((e) => { flows.get(e.debit).push([e.ym, e.amount, 0]); flows.get(e.credit).push([e.ym, 0, e.amount]); });
@@ -1088,9 +1122,19 @@ function build(raw) {
       if (e.credit === a.name) lines.push({ e, i, d:0, c:e.amount, counter:e.debit });
     });
     lines.sort((x, y) => (x.e.dk < y.e.dk ? -1 : x.e.dk > y.e.dk ? 1 : x.i - y.i));
+    // 여러 줄 전표는 같은 계정·같은 방향 줄을 한 줄로 합치고, 상대 계정이 여럿이면 '제좌'
+    const merged = [], seen = new Map();
+    lines.forEach((l) => {
+      const lead = l.e.grpRows ? l.e : l.e.lead;
+      if (!lead) { merged.push(l); return; }
+      const k = lead.row + (l.d ? 'd' : 'c'), m = seen.get(k);
+      if (m) { m.d += l.d; m.c += l.c; if (m.counter !== l.counter) m.counter = '제좌'; return; }
+      const n = Object.assign({}, l, { e:lead });
+      seen.set(k, n); merged.push(n);
+    });
     let bal = 0;
-    lines.forEach((l) => { bal += a.sgn * (l.d - l.c); l.bal = bal; });
-    ledger.set(a.name, lines);
+    merged.forEach((l) => { bal += a.sgn * (l.d - l.c); l.bal = bal; });
+    ledger.set(a.name, merged);
   });
   // 알림 수신함 (Code.gs가 수신함을 함께 보내줄 때만)
   let inbox = null, inboxErr = null;
@@ -1105,8 +1149,37 @@ function build(raw) {
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
   const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]), row:num(r[4]) })).filter((r) => r.kw);
-  return { accounts, byName, journal, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
+  return { accounts, byName, journal, list, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
 }
+
+/* 여러 행(쌍)을 차변·대변 줄로: 같은 계정은 합쳐요. 처음 나온 순서 유지 */
+function vLines(rows) {
+  const out = [];
+  [['차', 'debit'], ['대', 'credit']].forEach(([side, k]) => {
+    const m = new Map();
+    rows.forEach((x) => { if (!m.has(x[k])) { const l = { side, acct:x[k], amount:0 }; m.set(x[k], l); out.push(l); } m.get(x[k]).amount += x.amount; });
+  });
+  return out;
+}
+/* 차변·대변 줄 → 쌍 (서버 splitLines_와 같은 방식) */
+function vPairs(lines) {
+  const dr = lines.filter((l) => l.side === '차').map((l) => ({ ...l })), cr = lines.filter((l) => l.side === '대').map((l) => ({ ...l }));
+  const out = [];
+  let i = 0, j = 0;
+  while (i < dr.length && j < cr.length) {
+    const a = Math.min(dr[i].amount, cr[j].amount);
+    out.push({ debit:dr[i].acct, credit:cr[j].acct, amount:a });
+    dr[i].amount -= a; cr[j].amount -= a;
+    if (!dr[i].amount) i++;
+    if (!cr[j].amount) j++;
+  }
+  return out;
+}
+/* 목록용: '현금' / '미수금 외 1' */
+const sideNames = (e, side) => { const n = e.lines.filter((l) => l.side === side).map((l) => l.acct); return n.length > 1 ? n[0] + ' 외 ' + (n.length - 1) : n[0] || ''; };
+const vSides = (e) => sideNames(e, '차') + ' / ' + sideNames(e, '대');
+const srch = (e) => (e.search || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ')) + ' ' + e.date;
+const leadOf = (e) => (e && e.sub ? e.lead : e);
 
 /* 기간: 연간이면 1~12월, 월이면 그 달. 비교 기간은 전년/전월 */
 function period() {
@@ -1193,12 +1266,12 @@ function renderStatus() {
   if (!D) { $('status').innerHTML = ''; return; }
   const all = { s:0, e:999912 };
   const t = totals(all);
-  const unconf = D.journal.filter((e) => e.confirm === '미확인').length;
+  const unconf = D.list.filter((e) => e.confirm === '미확인').length;
   $('status').innerHTML =
     '<span><span class="dot' + (t.ok ? '' : ' bad') + '"></span>대차 <b>' + (t.ok ? '일치' : '불일치') + '</b></span>' +
     '<span class="clickable" data-go="journal" data-st="미확인"><span class="dot' + (unconf ? ' warn' : '') + '"></span>미확인 <b>' + unconf + '</b>건</span>' +
     '<span class="clickable" data-go="summary"><span class="dot' + (D.issues.length ? ' bad' : '') + '"></span>오류 <b>' + D.issues.length + '</b>건</span>' +
-    '<span>전표 <b>' + D.journal.filter((e) => !e.void).length + '</b>건</span>' +
+    '<span>전표 <b>' + D.list.filter((e) => !e.void).length + '</b>건</span>' +
     '<span>갱신 ' + esc(D.at) + '</span>';
   $('upd').textContent = S.note ? '최신 데이터를 못 불러왔어요 · 저장된 ' + D.at + ' 데이터' : '갱신 ' + D.at;
 }
@@ -1244,7 +1317,7 @@ const VIEWS = {
     const parts = [['현금및예금', t.cash, 'var(--c1)'], ['적금', t.savings, 'var(--c3)'], ['투자자산', t.invest, 'var(--c4)'], ['기타자산', t.other, 'var(--c2)']];
     const pos = parts.filter((p) => p[1] > 0);
     const totPos = pos.reduce((s, p) => s + p[1], 0) || 1;
-    const recent = D.journal.filter((e) => !e.void).slice(-6).reverse();
+    const recent = D.list.filter((e) => !e.void).slice(-6).reverse();
     let h = '<div class="kpis">' + kpi('순자산', t.assets - t.liab, 'hero') + kpi('자산총계', t.assets) + kpi('부채총계', t.liab) + kpi('카드 결제 예정액', card) + '</div>';
     h += '<div class="kpis">' + kpi((y || '') + '년 수익', yt.rev) + kpi((y || '') + '년 비용', yt.exp) + kpi((y || '') + '년 순손익', yt.net) + '</div>';
     if (D.issues.length) {
@@ -1260,7 +1333,7 @@ const VIEWS = {
       pos.map((p) => '<i style="width:' + (p[1] / totPos * 100) + '%;background:' + p[2] + '"></i>').join('') + '</div><div class="legend">' +
       parts.map((p) => '<span><em style="background:' + p[2] + '"></em>' + p[0] + '</span><span>' + fmt(p[1]) + '원 <span class="muted">' + (p[1] > 0 ? Math.round(p[1] / totPos * 100) : 0) + '%</span></span>').join('') + '</div></div>';
     h += '<div class="card"><h2>최근 전표<span class="sub">눌러서 상세 보기</span></h2>' + (recent.length ? '<table class="tbl"><tbody>' +
-      recent.map((e) => '<tr class="go" data-entry="' + e.row + '"><td class="muted" style="white-space:nowrap">' + esc(e.date.replace(/^\d{4}\D/, '')) + '</td><td>' + esc(e.debit) + ' <span class="muted">/</span> ' + esc(e.credit) + '</td><td class="num">' + fmt(e.amount) + '</td></tr>').join('') + '</tbody></table>' : '<div class="empty">전표가 없어요</div>') + '</div></div>';
+      recent.map((e) => '<tr class="go" data-entry="' + e.row + '"><td class="muted" style="white-space:nowrap">' + esc(e.date.replace(/^\d{4}\D/, '')) + '</td><td>' + esc(sideNames(e, '차')) + ' <span class="muted">/</span> ' + esc(sideNames(e, '대')) + '</td><td class="num">' + fmt(e.total) + '</td></tr>').join('') + '</tbody></table>' : '<div class="empty">전표가 없어요</div>') + '</div></div>';
     return h;
   },
 
@@ -1315,12 +1388,12 @@ const VIEWS = {
   journal() {
     if (isM()) return journalM();
     const q = S.q.toLowerCase();
-    const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q))).slice().reverse();
+    const list = S.D.list.filter((e) => stMatch(e) && (!q || srch(e).toLowerCase().includes(q))).slice().reverse();
     return newBtn() + allBtn(list) + '<div class="card"><div class="ctrl"><input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" style="flex:1;min-width:160px">' +
       '<select id="st"><option value="">전체</option><option value="미확인"' + (S.st === '미확인' ? ' selected' : '') + '>미확인</option><option value="확인"' + (S.st === '확인' ? ' selected' : '') + '>확인</option><option value="오류"' + (S.st === '오류' ? ' selected' : '') + '>오류</option><option value="무효"' + (S.st === '무효' ? ' selected' : '') + '>무효</option></select>' +
       '<span class="muted" style="font-size:12px">' + list.length + '건 · 최근 입력순</span></div>' +
       (list.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>전표</th><th>날짜</th><th>차변</th><th>대변</th><th class="num">금액</th><th class="hide-m">적요</th><th>확인</th></tr></thead><tbody>' +
-      list.map((e) => '<tr class="go' + (S.sel === e.row ? ' sel' : '') + '" data-entry="' + e.row + '"><td class="muted">' + esc(e.no) + '</td><td>' + esc(e.date) + '</td><td>' + esc(e.debit) + '</td><td>' + esc(e.credit) + '</td><td class="num">' + fmt(e.amount) + '</td><td class="hide-m muted">' + esc(e.memo) + '</td><td>' + badge(e) + '</td></tr>').join('') +
+      list.map((e) => '<tr class="go' + (S.sel === e.row ? ' sel' : '') + '" data-entry="' + e.row + '"><td class="muted">' + esc(e.no) + '</td><td>' + esc(e.date) + '</td><td>' + esc(sideNames(e, '차')) + '</td><td>' + esc(sideNames(e, '대')) + '</td><td class="num">' + fmt(e.total) + '</td><td class="hide-m muted">' + esc(e.memo) + '</td><td>' + badge(e) + '</td></tr>').join('') +
       '</tbody></table></div>' : '<div class="empty">조건에 맞는 전표가 없어요</div>') + '</div>';
   },
 
@@ -1412,7 +1485,7 @@ function summaryM() {
   const na = t.assets - t.liab;
   let delta = '';
   if (D.valid.some((e) => e.ym && e.ym <= pYm)) { const tp = totals({ s:0, e:pYm }); const d = na - (tp.assets - tp.liab); delta = '<div class="d">지난달 말보다 ' + (d >= 0 ? '+' : '') + fmt(d) + '원</div>'; }
-  const unconf = D.journal.filter((e) => e.confirm === '미확인').length;
+  const unconf = D.list.filter((e) => e.confirm === '미확인').length;
   let h = '<div class="chips">' +
     '<span class="chip"><span class="dot' + (t.ok ? '' : ' bad') + '"></span>대차 ' + (t.ok ? '일치' : '불일치') + '</span>' +
     '<button class="chip" data-go="journal" data-st="미확인"><span class="dot' + (unconf ? ' warn' : '') + '"></span>미확인 ' + unconf + '건</button>' +
@@ -1428,13 +1501,13 @@ function summaryM() {
   const totPos = pos.reduce((s, p) => s + p[1], 0) || 1;
   h += sec('자산 구성', '<div style="padding:14px 16px"><div class="stack">' + pos.map((p) => '<i style="width:' + (p[1] / totPos * 100) + '%;background:' + p[2] + '"></i>').join('') + '</div><div class="legend">' +
     parts.map((p) => '<span><em style="background:' + p[2] + '"></em>' + p[0] + '</span><span>' + fmt(p[1]) + '원 <span class="muted">' + (p[1] > 0 ? Math.round(p[1] / totPos * 100) : 0) + '%</span></span>').join('') + '</div></div>');
-  const recent = D.journal.filter((e) => !e.void).slice(-5).reverse();
+  const recent = D.list.filter((e) => !e.void).slice(-5).reverse();
   if (recent.length) h += sec('최근 전표', recent.map(jrow).join(''), '<button class="lnk" data-go="journal" data-st="">모두 보기</button>');
   return h;
 }
 function journalM() {
   const q = S.q.toLowerCase();
-  const list = S.D.journal.filter((e) => stMatch(e) && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q)))
+  const list = S.D.list.filter((e) => stMatch(e) && (!q || srch(e).toLowerCase().includes(q)))
     .sort((a, b) => (a.dk < b.dk ? 1 : a.dk > b.dk ? -1 : b.row - a.row));
   const segs = [['', '전체'], ['미확인', '미확인'], ['확인', '확인'], ['오류', '오류'], ['무효', '무효']];
   return '<label class="ios-search">' + SEARCH_IC + '<input type="search" id="q" placeholder="계정·적요·금액 검색" value="' + esc(S.q) + '" enterkeyhint="search" autocomplete="off"></label>' +
@@ -1469,23 +1542,29 @@ function trialM() {
 
 /* ===== 전표 상세 패널 (PC: 오른쪽 패널, 폰: 아래에서 올라오는 시트) ===== */
 function openEntry(row) {
-  const e = S.D.journal.find((x) => x.row === row);
+  const e = leadOf(S.D.journal.find((x) => x.row === row));
   if (!e) return;
-  S.sel = row;
+  S.sel = e.row;
+  const rows = e.grpRows || [e];
   $('drTitle').textContent = '전표 ' + (e.no || '(번호 없음)');
-  const url = 'https://docs.google.com/spreadsheets/d/' + S.D.sid + '/edit#gid=' + S.D.gid + '&range=A' + e.row + ':L' + e.row;
+  const last = rows[rows.length - 1].row;
+  const url = 'https://docs.google.com/spreadsheets/d/' + S.D.sid + '/edit#gid=' + S.D.gid + '&range=A' + e.row + ':M' + (last - e.row < 30 ? last : e.row);
   const inc = isInc(e);
-  const accts = [e.debit, e.credit].filter((n, i, arr) => n && S.D.byName.has(n) && arr.indexOf(n) === i);
-  const jl = (side, name) => '<div class="ios-row static"><span class="tag">' + side + '</span><div class="tx"><div class="t1">' + esc(name || '-') + '</div></div><div class="rt amt">' + fmt(e.amount) + '</div></div>';
+  const accts = e.lines.map((l) => l.acct).filter((n, i, arr) => n && S.D.byName.has(n) && arr.indexOf(n) === i);
+  const code = (n) => { const a = S.D.byName.get(n); return a ? a.code : ''; };
+  const dsum = e.lines.filter((l) => l.side === '차').reduce((t, l) => t + l.amount, 0), csum = e.lines.filter((l) => l.side === '대').reduce((t, l) => t + l.amount, 0);
+  const jlines = '<div class="vt"><div class="vt-h"><span>구분</span><span>계정과목</span><span>차변</span><span>대변</span></div>' +
+    e.lines.map((l) => '<div class="vt-r"><span class="tag">' + (l.side === '차' ? '차변' : '대변') + '</span><span class="vt-a"><em>' + code(l.acct) + '</em>' + esc(l.acct || '-') + '</span><span class="num">' + (l.side === '차' ? fmt(l.amount) : '') + '</span><span class="num">' + (l.side === '대' ? fmt(l.amount) : '') + '</span></div>').join('') +
+    (e.lines.length > 2 ? '<div class="vt-r vt-f"><span></span><span>합계</span><span class="num">' + fmt(dsum) + '</span><span class="num">' + fmt(csum) + '</span></div>' : '') + '</div>';
   $('drBody').innerHTML =
-    '<div class="dt-hero"><div class="dt-amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.amount) + '<small>원</small></div><div class="dt-t">' + esc(memoT(e.memo) || (e.debit + ' / ' + e.credit)) + '</div><div class="dt-s">' + esc(e.dk ? dLabel(e.dk) : (e.date || '날짜 없음')) + ' · ' + badge(e) + '</div></div>' +
+    '<div class="dt-hero"><div class="dt-amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.total) + '<small>원</small></div><div class="dt-t">' + esc(memoT(e.memo) || vSides(e)) + '</div><div class="dt-s">' + esc(e.dk ? dLabel(e.dk) : (e.date || '날짜 없음')) + ' · ' + badge(e) + '</div></div>' +
     (e.problems.length ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">확인 필요</b><div style="margin-top:4px">' + esc(e.problems.join(', ')) + '</div></div>' : '') +
     (e.void ? '<div class="card" style="padding:12px 14px;margin-bottom:16px;color:var(--muted)">무효 처리된 전표예요 · 장부 계산에서 빠져 있어요</div>' +
       '<div class="acts"><button class="sbtn" data-wr="unvoid">무효 취소</button></div>'
     : '<div class="acts">' + (e.confirm === '확인' ? '<button class="sbtn" data-wr="unconfirm">미확인으로 되돌리기</button>' : '<button class="pbtn" data-wr="confirm">확인 처리</button>') + '<button class="sbtn" data-wr="edit">수정</button></div>' +
       '<div class="acts"><button class="sbtn voidbtn' + (S.armV === e.row ? ' arm' : '') + '" data-wr="void">' + (S.armV === e.row ? '한 번 더 누르면 무효 처리돼요' : '무효 처리') + '</button></div>') +
-    sec('분개', jl('차변', e.debit) + jl('대변', e.credit)) +
-    sec('정보', vrow('날짜', esc(e.date || '-')) + vrow('전표 번호', esc(e.no || '-')) + vrow('시트 위치', '분개장 ' + e.row + '행') +
+    sec('분개' + (e.grpRows ? ' · 여러 줄' : ''), jlines) +
+    sec('정보', vrow('날짜', esc(e.date || '-')) + vrow('전표 번호', esc(rows.map((x) => x.no).join(', ') || '-')) + vrow('시트 위치', '분개장 ' + rows.map((x) => x.row).join(', ') + '행') +
       (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '') +
       (e.note ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">메모</div><div class="t1 wrap sel" style="white-space:pre-wrap">' + esc(e.note) + '</div></div></div>' : '')) +
     sec('', accts.map((n) => '<div class="ios-row act" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + ' 원장 보기</div></div>' + CHEV + '</div>').join('') +
@@ -1555,18 +1634,20 @@ function allBtn(list) {
 }
 function visibleUnconfirmed() {
   const q = S.q.toLowerCase();
-  return S.D.journal.filter((e) => e.confirm === '미확인' && (!q || [e.no, e.date, e.debit, e.credit, e.memo, e.note, e.amount].join(' ').toLowerCase().includes(q)));
+  return S.D.list.filter((e) => e.confirm === '미확인' && (!q || srch(e).toLowerCase().includes(q)));
 }
 /* 확인 상태 바꾸기: 화면에 먼저 반영하고, 실패하면 되돌려요 */
 async function setConfirmUI(entries, value) {
   if (!entries.length || S.saving) return;
+  const nv = entries.length;
+  entries = entries.flatMap((e) => e.grpRows || [e]);   // 여러 줄 전표는 묶음 전체
   S.saving = true;
   const prev = entries.map((e) => e.confirm);
   entries.forEach((e) => { e.confirm = value; });
   render(); if (S.sel) openEntry(S.sel);
   try {
     const r = await api('setConfirm', entries.map((e) => ({ row:e.row, no:e.no })), value);
-    toast(value === '확인' ? entries.length + '건을 확인했어요' : '미확인으로 되돌렸어요');
+    toast(value === '확인' ? nv + '건을 확인했어요' : '미확인으로 되돌렸어요');
     S.saving = false;
     applyPatch(r);
   } catch (err) {
@@ -1579,8 +1660,9 @@ async function setConfirmUI(entries, value) {
 async function voidUI(e, on) {
   if (S.saving) return;
   S.saving = true; S.armV = 0;
-  const prev = e.confirm;
-  e.confirm = on ? '무효' : '미확인'; e.void = on;
+  const rows = e.grpRows || [e];
+  const prev = rows.map((x) => x.confirm);
+  rows.forEach((x) => { x.confirm = on ? '무효' : '미확인'; x.void = on; });
   render(); openEntry(e.row);
   try {
     const r = await api('voidEntry', e.row, e.no, on);
@@ -1588,45 +1670,69 @@ async function voidUI(e, on) {
     S.saving = false;
     applyPatch(r);
   } catch (err) {
-    e.confirm = prev; e.void = prev === '무효';
+    rows.forEach((x, i) => { x.confirm = prev[i]; x.void = prev[i] === '무효'; });
     S.saving = false;
     render(); openEntry(e.row);
     toast('저장하지 못했어요 · ' + err.message, true);
   }
 }
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
-function acctOptions(sel) {
+function acctOptions(sel, withCode) {
   return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
     const as = S.D.accounts.filter((a) => a.type === ty && (a.active || a.name === sel));
-    return as.length ? '<optgroup label="' + ty + '">' + as.map((a) => '<option value="' + esc(a.name) + '"' + (a.name === sel ? ' selected' : '') + '>' + esc(a.name) + '</option>').join('') + '</optgroup>' : '';
+    return as.length ? '<optgroup label="' + ty + '">' + as.map((a) => '<option value="' + esc(a.name) + '"' + (a.name === sel ? ' selected' : '') + '>' + (withCode ? a.code + ' ' : '') + esc(a.name) + '</option>').join('') + '</optgroup>' : '';
   }).join('');
 }
-/* 입력 폼: mode 'edit'(기존 전표) 또는 'new'(수신함 알림에서) */
+/* 입력 폼: mode 'edit'(기존 전표) 또는 'new'(새 전표·수신함 알림에서)
+   분개는 회계프로그램처럼 줄 단위(계정 · 차변 · 대변). 차변·대변이 한 줄씩이면 일반 전표, 더 많으면 여러 줄 전표(M열 묶음)로 저장 */
+function jlRow(l) {
+  const dr = l.side === '차' && l.amount ? fmt(l.amount) : '', cr = l.side === '대' && l.amount ? fmt(l.amount) : '';
+  return '<div class="jl-row"><span class="tag jl-tag">' + (cr ? '대변' : dr ? '차변' : '-') + '</span><select name="lacct" aria-label="계정">' + acctOptions(l.acct, true) + '</select>' +
+    '<button type="button" class="jl-del" data-wr="delline" aria-label="줄 삭제">×</button>' +
+    '<input type="text" name="ldr" inputmode="numeric" placeholder="차변" value="' + dr + '" aria-label="차변 금액"><input type="text" name="lcr" inputmode="numeric" placeholder="대변" value="' + cr + '" aria-label="대변 금액"></div>';
+}
+function jlRead(f) {
+  return [...f.querySelectorAll('.jl-row')].map((r) => {
+    const dr = num(r.querySelector('[name=ldr]').value), cr = num(r.querySelector('[name=lcr]').value);
+    return { acct:r.querySelector('[name=lacct]').value, side:cr > 0 && !(dr > 0) ? '대' : '차', amount:dr > 0 ? dr : cr, dr, cr };
+  });
+}
+function jlSum() {
+  const f = $('ef'); if (!f) return;
+  const ls = jlRead(f);
+  const d = ls.reduce((t, l) => t + (l.dr || 0), 0), c = ls.reduce((t, l) => t + (l.cr || 0), 0);
+  f.querySelectorAll('.jl-row').forEach((r, i) => { r.querySelector('.jl-tag').textContent = ls[i].cr > 0 ? '대변' : ls[i].dr > 0 ? '차변' : '-'; });
+  $('jlSum').innerHTML = '<span>차변 <b>' + fmt(d) + '</b></span><span>대변 <b>' + fmt(c) + '</b></span><span class="' + (d === c && d > 0 ? 'ok' : 'bad') + '">' + (d === c ? (d > 0 ? '차액 0 ✓' : '금액을 넣어 주세요') : '차액 ' + fmt(Math.abs(d - c))) + '</span>';
+  const multi = ls.filter((l) => l.acct || l.dr || l.cr).length > 2;
+  const rs = $('ruleSec'); if (rs) rs.hidden = multi;
+}
 function openForm(mode, ctx) {
   const v = ctx.v;
-  S.form = { mode, row:ctx.row, no:ctx.no, ib:ctx.ib || null };
+  const lines = v.lines ? v.lines.map((l) => ({ ...l })) : [{ side:'차', acct:v.debit || '', amount:v.amount || 0 }, { side:'대', acct:v.credit || '', amount:v.amount || 0 }];
+  S.form = { mode, row:ctx.row, no:ctx.no, refs:ctx.refs || null, grp:!!ctx.grp, ib:ctx.ib || null };
   $('drTitle').textContent = mode === 'edit' ? '전표 ' + (ctx.no || '') + ' 수정' : '새 전표';
   const fm = (lab, ctl) => '<label class="ios-row fm"><span class="lab">' + lab + '</span>' + ctl + '</label>';
   $('drBody').innerHTML = '<form id="ef" autocomplete="off">' +
-    sec('', fm('날짜', '<input type="date" name="date" required value="' + esc(v.date) + '">') +
-      fm('차변', '<select name="debit" required>' + acctOptions(v.debit) + '</select>') +
-      fm('대변', '<select name="credit" required>' + acctOptions(v.credit) + '</select>') +
-      fm('금액', '<input type="text" name="amount" inputmode="numeric" placeholder="0" required value="' + (v.amount ? fmt(v.amount) : '') + '">') +
-      fm('적요', '<input type="text" name="memo" placeholder="예: 점심, 통장 간 이체" value="' + esc(v.memo || '') + '">') +
+    sec('', fm('날짜', '<input type="date" name="date" required value="' + esc(v.date) + '">')) +
+    sec('분개', '<div class="jl">' + lines.map(jlRow).join('') + '</div><button type="button" class="ios-row act jl-add" data-wr="addline">＋ 줄 추가</button><div class="jl-sum" id="jlSum"></div>') +
+    sec('', fm('적요', '<input type="text" name="memo" placeholder="예: 점심, 통장 간 이체" value="' + esc(v.memo || '') + '">') +
       '<label class="ios-row fm fm-ta"><span class="lab">메모</span><textarea name="note" rows="3" placeholder="알림 원문, 참고 사항">' + esc(v.note || '') + '</textarea></label>' +
       fm('상태', '<select name="confirm"><option value="미확인"' + (v.confirm === '확인' ? '' : ' selected') + '>미확인</option><option value="확인"' + (v.confirm === '확인' ? ' selected' : '') + '>확인</option></select>')) +
-    (ctx.ib ? sec('분류 규칙', '<label class="ios-row fm"><span class="lab">키워드</span><input type="text" name="kw" value="' + esc(ctx.kw || '') + '" placeholder="알림에 들어 있는 글자"></label>' +
+    (ctx.ib ? '<div id="ruleSec">' + sec('분류 규칙', '<label class="ios-row fm"><span class="lab">키워드</span><input type="text" name="kw" value="' + esc(ctx.kw || '') + '" placeholder="알림에 들어 있는 글자"></label>' +
       '<label class="ios-row fm"><span class="lab" style="width:72px">기본 적요</span><input type="text" name="rdesc" value="' + esc(ctx.rule ? ctx.rule.desc || '' : v.memo || '') + '" placeholder="이 키워드면 들어갈 적요"></label>' +
-      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정·적요로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '다음 알림부터 키워드가 있으면 바로 전표로 만들어져요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') : '') +
+      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정·적요로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '다음 알림부터 키워드가 있으면 바로 전표로 만들어져요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') + '</div>' : '') +
     '<div class="acts"><button type="submit" class="pbtn ink" id="efSave">저장</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
-    '<p class="fm-note">' + (mode === 'edit' ? '저장하면 구글 시트 분개장 ' + ctx.row + '행이 바뀌어요' : ctx.ib ? '저장하면 분개장 맨 아래에 새 전표가 추가되고, 수신함 알림은 처리됨으로 바뀌어요' : '저장하면 분개장 맨 아래에 새 전표가 추가돼요') + '</p></form>';
+    '<p class="fm-note">' + (mode === 'edit' ? '저장하면 구글 시트 분개장 ' + (ctx.refs ? ctx.refs.map((r) => r.row).join(', ') : ctx.row) + '행이 바뀌어요' : ctx.ib ? '저장하면 분개장 맨 아래에 새 전표가 추가되고, 수신함 알림은 처리됨으로 바뀌어요' : '저장하면 분개장 맨 아래에 새 전표가 추가돼요') +
+    ' · 차변·대변이 여러 줄이면 한 묶음(여러 행)으로 저장돼요</p></form>';
+  jlSum();
   $('drBody').scrollTop = 0;
   $('drawer').classList.add('on'); $('drawer').setAttribute('aria-hidden', 'false'); $('scrim').classList.add('on');
 }
 function editEntry(row) {
-  const e = S.D.journal.find((x) => x.row === row);
+  const e = leadOf(S.D.journal.find((x) => x.row === row));
   if (!e || e.void) return;
-  openForm('edit', { row:e.row, no:e.no, v:{ date:isoOf(e.dk), debit:e.debit, credit:e.credit, amount:e.amount, memo:e.memo, note:e.note, confirm:e.confirm } });
+  const refs = (e.grpRows || [e]).map((x) => ({ row:x.row, no:x.no }));
+  openForm('edit', { row:e.row, no:e.no, refs, grp:!!e.grpRows, v:{ date:isoOf(e.dk), lines:e.lines, memo:e.memo, note:(e.grpRows || [e]).map((x) => x.note).filter(Boolean).join('\n'), confirm:e.confirm } });
 }
 /* 수신함 알림에서 날짜·금액을 채우고, 적요는 추천값(규칙의 기본 적요 → 가맹점명), 메모에는 알림 원문 (카드 승인이면 대변을 카드 계정으로) */
 function entryFromInbox(ibRow) {
@@ -1649,24 +1755,36 @@ function entryFromInbox(ibRow) {
 async function submitForm(f) {
   if (S.saving) return;
   const F = S.form;
-  const v = { date:f.date.value, debit:f.debit.value, credit:f.credit.value, amount:num(f.amount.value), memo:f.memo.value.trim(), note:f.note.value.trim(), confirm:f.confirm.value };
-  if (F.ib && f.rule && f.rule.checked) {
-    if (!f.kw.value.trim()) { toast('분류 규칙 키워드를 넣거나, 규칙 저장을 꺼 주세요', true); return; }
-    v.rule = { keyword:f.kw.value.trim(), desc:f.rdesc.value.trim() };
-  }
-  const bad = !v.date ? '날짜를 넣어 주세요' : !v.debit || !v.credit ? '차변·대변 계정을 골라 주세요' : v.debit === v.credit ? '차변과 대변이 같은 계정이에요' : !(v.amount > 0) ? '금액을 넣어 주세요' : '';
+  const ls = jlRead(f).filter((l) => l.acct || l.dr || l.cr);
+  const v = { date:f.date.value, memo:f.memo.value.trim(), note:f.note.value.trim(), confirm:f.confirm.value, lines:ls.map((l) => ({ side:l.side, acct:l.acct, amount:l.amount })) };
+  const d = ls.reduce((t, l) => t + (l.dr || 0), 0), c = ls.reduce((t, l) => t + (l.cr || 0), 0);
+  const dA = ls.filter((l) => l.side === '차').map((l) => l.acct), cA = ls.filter((l) => l.side === '대').map((l) => l.acct);
+  const bad = !v.date ? '날짜를 넣어 주세요'
+    : ls.some((l) => !l.acct) ? '계정을 고르지 않은 줄이 있어요'
+    : ls.some((l) => l.dr > 0 && l.cr > 0) ? '한 줄에는 차변이나 대변 한쪽만 넣어 주세요'
+    : ls.some((l) => !(l.amount > 0)) ? '금액이 빈 줄이 있어요'
+    : !dA.length || !cA.length ? '차변과 대변이 한 줄 이상씩 있어야 해요'
+    : d !== c ? '차변 합계와 대변 합계가 달라요 (차액 ' + fmt(Math.abs(d - c)) + ')'
+    : dA.some((n) => cA.includes(n)) ? '같은 계정이 차변과 대변에 모두 있어요' : '';
   if (bad) { toast(bad, true); return; }
+  const pairs = vPairs(v.lines);
+  const single = pairs.length === 1 && !F.grp;
+  const one = single ? { date:v.date, debit:pairs[0].debit, credit:pairs[0].credit, amount:pairs[0].amount, memo:v.memo, note:v.note, confirm:v.confirm } : null;
+  if (single && F.ib && f.rule && f.rule.checked) {
+    if (!f.kw.value.trim()) { toast('분류 규칙 키워드를 넣거나, 규칙 저장을 꺼 주세요', true); return; }
+    one.rule = { keyword:f.kw.value.trim(), desc:f.rdesc.value.trim() };
+  }
   S.saving = true;
   $('efSave').disabled = true; $('efSave').textContent = '저장 중…';
   try {
     let r;
     if (F.mode === 'edit') {
-      r = await api('updateEntry', F.row, F.no, v);
-      toast('전표 ' + F.no + '번을 수정했어요');
+      r = single ? await api('updateEntry', F.row, F.no, one) : await api('saveVoucher', F.refs, v, null);
+      toast('전표 ' + F.no + '번을 수정했어요' + (!single ? ' · ' + pairs.length + '행' : ''));
       S.sel = F.row;            // 반영한 뒤 이 전표를 다시 보여줘요
     } else {
-      r = await api('addEntry', v, F.ib);
-      toast('전표 ' + r.no + '번을 만들었어요' + (v.rule ? ' · 규칙 저장' : ''));
+      r = single ? await api('addEntry', one, F.ib) : await api('saveVoucher', [], v, F.ib);
+      toast('전표 ' + r.no + '번을 만들었어요' + (!single ? ' · 여러 줄 ' + pairs.length + '행' : one.rule ? ' · 규칙 저장' : ''));
       closeEntry();
     }
     S.saving = false;
@@ -1679,14 +1797,33 @@ async function submitForm(f) {
 }
 document.addEventListener('submit', (ev) => { if (ev.target.id === 'ef') { ev.preventDefault(); submitForm(ev.target); } });
 document.addEventListener('input', (ev) => {
-  if (ev.target.name === 'amount' && ev.target.closest('#ef')) {
-    const n = ev.target.value.replace(/[^\d]/g, '');
-    ev.target.value = n ? Number(n).toLocaleString('ko-KR') : '';
+  const t = ev.target;
+  if ((t.name === 'ldr' || t.name === 'lcr') && t.closest('#ef')) {
+    const n = t.value.replace(/[^\d]/g, '');
+    t.value = n ? Number(n).toLocaleString('ko-KR') : '';
+    if (n) t.closest('.jl-row').querySelector(t.name === 'ldr' ? '[name=lcr]' : '[name=ldr]').value = '';   // 한 줄은 차변이나 대변 한쪽만
+    jlSum();
   }
 });
+document.addEventListener('change', (ev) => { if (ev.target.name === 'lacct' && ev.target.closest('#ef')) jlSum(); });
+/* 줄 추가: 차액만큼 모자란 쪽에 금액을 미리 채워요 */
+function jlAdd() {
+  const f = $('ef'); if (!f) return;
+  const ls = jlRead(f);
+  const d = ls.reduce((t, l) => t + (l.dr || 0), 0), c = ls.reduce((t, l) => t + (l.cr || 0), 0);
+  f.querySelector('.jl').insertAdjacentHTML('beforeend', jlRow({ side:d < c ? '차' : '대', acct:'', amount:Math.abs(d - c) }));
+  jlSum();
+  const rows = f.querySelectorAll('.jl-row'); rows[rows.length - 1].querySelector('select').focus();
+}
+function jlDel(btn) {
+  const f = $('ef'); if (!f) return;
+  if (f.querySelectorAll('.jl-row').length <= 2) { toast('분개는 두 줄 이상이어야 해요', true); return; }
+  btn.closest('.jl-row').remove();
+  jlSum();
+}
 function onWrite(t) {
   const w = t.dataset.wr;
-  const e = S.sel && S.D.journal.find((x) => x.row === S.sel);
+  const e = S.sel && leadOf(S.D.journal.find((x) => x.row === S.sel));
   if (w === 'confirm' && e) setConfirmUI([e], '확인');
   else if (w === 'unconfirm' && e) setConfirmUI([e], '미확인');
   else if (w === 'void' && e) {
@@ -1698,6 +1835,8 @@ function onWrite(t) {
   else if (w === 'acct-new') openAcctNew();
   else if (w === 'rule-del' || w === 'acct-on' || w === 'acct-off') settingWrite(w);
   else if (w === 'edit' && e) editEntry(e.row);
+  else if (w === 'addline') jlAdd();
+  else if (w === 'delline') jlDel(t);
   else if (w === 'mkentry') entryFromInbox(Number(t.dataset.ibr));
   else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', note:'', confirm:'확인' } });
   else if (w === 'cancel') { const F = S.form; if (F && /^(rule|acct)/.test(F.mode)) closeEntry(); else if (F && F.mode === 'edit') openEntry(F.row); else if (F && F.ib) openInbox(F.ib.row); else closeEntry(); }

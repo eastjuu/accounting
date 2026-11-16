@@ -37,7 +37,7 @@ function getData(key) {
     const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, n).getValues().map((r) => r.map(conv).concat(Array(cols - n).fill('')));
     return { rows: rows, gid: sh.getSheetId() };
   };
-  const journal = read('분개장', 12);
+  const journal = read('분개장', COL_GRP);
   return {
     journal: journal.rows,
     journalGid: journal.gid,
@@ -65,9 +65,11 @@ function rowsOut_(sh, tz, rows) {
   if (!rows.length) return [];
   SpreadsheetApp.flush();   // 방금 쓴 값과 G~J 수식 결과가 반영된 뒤 읽어요
   const lo = Math.min.apply(null, rows), hi = Math.max.apply(null, rows);
-  const n = Math.min(COL_NOTE, sh.getMaxColumns());
+  const n = Math.min(COL_GRP, sh.getMaxColumns());
+  const pad = (r) => r.map((v) => cell_(v, tz)).concat(Array(COL_GRP - n).fill(''));
+  if (hi - lo > 60) return rows.map((r) => [r, pad(sh.getRange(r, 1, 1, n).getValues()[0])]);   // 멀리 떨어진 행은 따로 읽어요
   const vals = sh.getRange(lo, 1, hi - lo + 1, n).getValues();
-  return rows.map((r) => [r, vals[r - lo].map((v) => cell_(v, tz)).concat(Array(COL_NOTE - n).fill(''))]);
+  return rows.map((r) => [r, pad(vals[r - lo])]);
 }
 
 /* ===================== 알림 수신함 ===================== */
@@ -179,6 +181,7 @@ function header_(sh, col, title) {
 /* ===================== 쓰기 ===================== */
 const COL_CONFIRM = 11;   // K열
 const COL_NOTE = 12;
+const COL_GRP = 13;       // M열 묶음: 여러 줄 전표(복합분개)를 이루는 행들에 같은 값(첫 행의 전표번호)
 /** K열 '무효' = 무효 처리된 전표. 행은 남기고 집계(시산표·월별합계 수식, 앱)에서만 빠져요. */
 const VOID = '무효';      // L열 메모(알림 원문 등). 적요(F)는 사람이 쓰거나 추천값
 function withLock_(fn) {
@@ -190,8 +193,8 @@ function withLock_(fn) {
 function readRow_(sh, row, no) {
   row = Number(row);
   if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('분개장 ' + row + '행을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.');
-  const n = Math.min(COL_NOTE, sh.getMaxColumns());
-  const v = sh.getRange(row, 1, 1, n).getDisplayValues()[0].concat(Array(COL_NOTE - n).fill(''));
+  const n = Math.min(COL_GRP, sh.getMaxColumns());
+  const v = sh.getRange(row, 1, 1, n).getDisplayValues()[0].concat(Array(COL_GRP - n).fill(''));
   checkNo_(row, v[0], no);
   return v;
 }
@@ -260,6 +263,7 @@ function updateEntry(key, row, no, f) {
     const before = readRow_(sh, row, no);
     row = Number(row);
     if (String(before[COL_CONFIRM - 1]).trim() === VOID) throw new Error('무효 처리된 전표예요. 무효 취소 후 수정해 주세요.');
+    if (String(before[COL_GRP - 1]).trim()) throw new Error('여러 줄 전표의 한 줄이에요. 새로고침 후 전표 전체로 수정해 주세요.');
     const v = clean_(ss, f);
     sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
     sh.getRange(row, COL_CONFIRM, 1, 2).setValues([[v.confirm, v.note]]);   // K·L (G~J 수식은 건드리지 않아요)
@@ -268,20 +272,131 @@ function updateEntry(key, row, no, f) {
   });
 }
 
-/** 무효 처리(on=true) / 무효 취소(on=false). K열만 바꿔요. 취소하면 '미확인'으로 돌아가요. */
+/** 무효 처리(on=true) / 무효 취소(on=false). K열만 바꿔요. 취소하면 '미확인'으로 돌아가요. 묶음 전표면 묶음 전체를 함께 바꿔요. */
 function voidEntry(key, row, no, on) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   return withLock_(() => {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sh = ss.getSheetByName('분개장');
-    const before = String(readRow_(sh, row, no)[COL_CONFIRM - 1]).trim();
-    row = Number(row);
+    const first = readRow_(sh, row, no);
+    const rows = String(first[COL_GRP - 1]).trim() ? groupRows_(sh, first[COL_GRP - 1]) : [Number(row)];
     const after = on ? VOID : '미확인';
-    if ((on && before !== VOID) || (!on && before === VOID)) {
-      sh.getRange(row, COL_CONFIRM).setValue(after);
-      log_(ss, on ? '전표 무효' : '무효 취소', row, before, after);
+    const block = rowsDisp_(sh, rows);
+    const todo = rows.filter((r) => { const b = String(block[r][COL_CONFIRM - 1]).trim(); return on ? b !== VOID : b === VOID; });
+    if (todo.length) {
+      sh.getRangeList(todo.map((r) => 'K' + r)).setValue(after);
+      logMany_(ss, todo.map((r) => [on ? '전표 무효' : '무효 취소', r, block[r][COL_CONFIRM - 1], after]));
     }
-    return { row: row, rows: rowsOut_(sh, ss.getSpreadsheetTimeZone(), [row]) };
+    return { row: Number(row), rows: rowsOut_(sh, ss.getSpreadsheetTimeZone(), rows) };
+  });
+}
+/** M열(묶음) 값이 grp인 행 번호들 */
+function groupRows_(sh, grp) {
+  grp = String(grp).trim();
+  const last = sh.getLastRow();
+  if (!grp || last < 2 || sh.getMaxColumns() < COL_GRP) return [];
+  const out = [];
+  sh.getRange(2, COL_GRP, last - 1, 1).getDisplayValues().forEach((r, i) => { if (String(r[0]).trim() === grp) out.push(i + 2); });
+  return out;
+}
+/** 여러 행의 A~M 표시값 {행: [값…]} */
+function rowsDisp_(sh, rows) {
+  const out = {};
+  if (!rows.length) return out;
+  const n = Math.min(COL_GRP, sh.getMaxColumns());
+  const lo = Math.min.apply(null, rows), hi = Math.max.apply(null, rows);
+  const pad = (v) => v.concat(Array(COL_GRP - n).fill(''));
+  if (hi - lo > 60) rows.forEach((r) => { out[r] = pad(sh.getRange(r, 1, 1, n).getDisplayValues()[0]); });
+  else { const b = sh.getRange(lo, 1, hi - lo + 1, n).getDisplayValues(); rows.forEach((r) => { out[r] = pad(b[r - lo]); }); }
+  return out;
+}
+
+/* ===================== 여러 줄 전표 (복합분개) ===================== */
+/**
+ * 차변·대변 여러 줄을 받아 "차변 1개 / 대변 1개" 쌍으로 나눠 분개장 여러 행에 쓰고, M열에 같은 묶음 값을 넣어요.
+ * 시트 수식(시산표·월별합계·검증)은 행마다 차대가 맞으니 그대로 동작해요.
+ * v: {date, memo, note, confirm, lines:[{side:'차'|'대', acct, amount}]}
+ * 쌍 나누기: 차변 줄과 대변 줄을 순서대로 맞춰 가며 작은 금액만큼씩 떼어 내요(같은 입력이면 항상 같은 결과).
+ */
+function splitLines_(v) {
+  const ls = (v.lines || []).map((l) => ({ side: l.side === '대' ? '대' : '차', acct: String(l.acct || '').trim(), amount: Math.round(Number(String(l.amount).replace(/[^\d.-]/g, ''))) }));
+  if (ls.some((l) => !l.acct)) throw new Error('계정을 고르지 않은 줄이 있어요.');
+  if (ls.some((l) => !(l.amount > 0))) throw new Error('금액이 0이거나 빈 줄이 있어요.');
+  const dr = ls.filter((l) => l.side === '차').map((l) => Object.assign({}, l)), cr = ls.filter((l) => l.side === '대').map((l) => Object.assign({}, l));
+  if (!dr.length || !cr.length) throw new Error('차변과 대변이 한 줄 이상씩 있어야 해요.');
+  const sd = dr.reduce((s, l) => s + l.amount, 0), sc = cr.reduce((s, l) => s + l.amount, 0);
+  if (sd !== sc) throw new Error('차변 합계(' + sd + ')와 대변 합계(' + sc + ')가 달라요.');
+  if (dr.some((d) => cr.some((c) => c.acct === d.acct))) throw new Error('같은 계정이 차변과 대변에 모두 있어요.');
+  if (ls.length > 20) throw new Error('한 전표는 20줄까지예요.');
+  const pairs = [];
+  let i = 0, j = 0;
+  while (i < dr.length && j < cr.length) {
+    const a = Math.min(dr[i].amount, cr[j].amount);
+    pairs.push({ debit: dr[i].acct, credit: cr[j].acct, amount: a });
+    dr[i].amount -= a; cr[j].amount -= a;
+    if (!dr[i].amount) i++;
+    if (!cr[j].amount) j++;
+  }
+  return pairs.map((p, k) => ({ date: v.date, debit: p.debit, credit: p.credit, amount: p.amount, memo: v.memo, note: k === 0 ? v.note : '', confirm: v.confirm }));
+}
+/**
+ * 여러 줄 전표 저장. refs: 고칠 기존 행들 [{row, no}] (새 전표면 빈 배열). ib: 수신함 알림에서 만들 때.
+ * - 기존 행은 순서대로 그 자리에서 고치고, 줄이 늘면 맨 아래에 추가, 줄면 남는 행은 무효 처리(묶음에서 빼요).
+ * - 남은 행이 2개 이상이면 M열에 묶음 값(기존 묶음 값, 없으면 첫 행 전표번호). 1개면 M을 비워 일반 전표로.
+ */
+function saveVoucher(key, refs, v, ib) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const tz = ss.getSpreadsheetTimeZone();
+    const sh = ss.getSheetByName('분개장');
+    const pairs = splitLines_(v).map((p) => clean_(ss, p));
+    refs = (refs || []).map((r) => ({ row: Number(r.row), no: r.no }));
+    const before = refs.map((r) => readRow_(sh, r.row, r.no));
+    if (before.some((b) => String(b[COL_CONFIRM - 1]).trim() === VOID)) throw new Error('무효 처리된 전표예요. 무효 취소 후 수정해 주세요.');
+    const grpOld = before.length ? String(before[0][COL_GRP - 1]).trim() : '';
+    if (before.some((b) => String(b[COL_GRP - 1]).trim() !== grpOld)) throw new Error('묶음이 맞지 않아요. 새로고침 후 다시 시도해 주세요.');
+    if (grpOld && groupRows_(sh, grpOld).length !== refs.length) throw new Error('묶음 행이 바뀌었어요. 새로고침 후 다시 시도해 주세요.');
+    let ref = null, ibMemo = '';
+    if (ib && ib.row) {
+      ref = inboxRef_(ss, ib.row);
+      const st = ref.sh.getRange(ref.row, 3, 1, 3).getDisplayValues()[0];
+      if (String(st[0]).trim() === '처리됨') throw new Error('이미 처리된 알림이에요. 새로고침해 주세요.');
+      ibMemo = String(st[2]).trim();
+    }
+    header_(sh, COL_NOTE, '메모');
+    header_(sh, COL_GRP, '묶음');
+    const logs = [];
+    const keep = Math.min(refs.length, pairs.length);
+    for (let i = 0; i < keep; i++) {
+      const r = refs[i].row, p = pairs[i];
+      sh.getRange(r, 2, 1, 5).setValues([[p.date, p.debit, p.credit, p.amount, p.memo]]);
+      sh.getRange(r, COL_CONFIRM, 1, 2).setValues([[p.confirm, p.note]]);
+      logs.push(['전표 수정 (여러 줄)', r, before[i], p]);
+    }
+    let added = [];
+    if (pairs.length > keep) {
+      added = writeEntries_(sh, tz, pairs.slice(keep));
+      added.forEach((a, k) => logs.push(['전표 추가 (여러 줄)' + (ref ? ' (수신함 ' + (ref.id < 0 ? '시트 ' : '') + ref.row + '행)' : ''), a.row, null, Object.assign({ no: a.no }, pairs[keep + k])]));
+    }
+    const dropped = refs.slice(keep).map((r) => r.row);
+    if (dropped.length) {
+      sh.getRangeList(dropped.map((r) => 'K' + r)).setValue(VOID);
+      sh.getRangeList(dropped.map((r) => 'M' + r)).setValue('');
+      dropped.forEach((r, k) => logs.push(['전표 무효 (여러 줄 수정으로 줄 감소)', r, before[keep + k], { confirm: VOID, group: '' }]));
+    }
+    const active = refs.slice(0, keep).map((r) => r.row).concat(added.map((a) => a.row));
+    SpreadsheetApp.flush();
+    const nos = rowsOut_(sh, tz, active).map((x) => Number(x[1][0]));
+    const grp = active.length > 1 ? (grpOld || String(nos[0])) : '';
+    if (active.length > 1 || grpOld) sh.getRangeList(active.map((r) => 'M' + r)).setValue(grp);
+    if (ref) ref.sh.getRange(ref.row, 3, 1, 3).setValues([['처리됨', nos.join(', '), (ibMemo ? ibMemo + ' / ' : '') + '앱에서 직접 입력']]);
+    logMany_(ss, logs);
+    return {
+      row: active[0], no: nos[0], nos: nos,
+      rows: rowsOut_(sh, tz, active.concat(dropped)),
+      inbox: ref ? [inboxOut_(ref)] : undefined,
+    };
   });
 }
 
@@ -322,6 +437,11 @@ function addEntry(key, f, ib) {
  * A열 자동번호·G~J 수식은 그대로 두고 B~F, K, L만 써요. 돌려주는 값: {row, no, rows}
  */
 function writeEntry_(sh, tz, v) {
+  const out = writeEntries_(sh, tz, [v])[0];
+  return { row: out.row, no: out.no, rows: out.rows };
+}
+/** 여러 전표를 이어진 빈 행에 한 번에 써요. 돌려주는 값: [{row, no, rows}] */
+function writeEntries_(sh, tz, vs) {
   const last = Math.max(1, sh.getLastRow());
   const vals = last < 2 ? [] : sh.getRange(2, 1, last - 1, 6).getValues();
   let lastData = 1, maxNo = 0;
@@ -329,23 +449,27 @@ function writeEntry_(sh, tz, v) {
     if (r.slice(1).some((x) => x !== '' && x !== null)) lastData = i + 2;
     const n = Number(r[0]); if (n > maxNo) maxNo = n;
   });
-  const row = lastData + 1;
-  // 쓰기 전에 그 행이 정말 비어 있는지 (위에서 읽은 값으로 확인: lastData 아래는 B~F가 비어 있어요)
-  if (row - 2 < vals.length && vals[row - 2].slice(1).some((x) => x !== '' && x !== null)) throw new Error('분개장 ' + row + '행이 비어 있지 않아요. 새로고침 후 다시 시도해 주세요.');
-  const fm = sh.getRange(row, 1, 1, 10).getFormulasR1C1()[0];   // A, G~J 수식 여부
-  if (fm[0]) sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
-  else sh.getRange(row, 1, 1, 6).setValues([[maxNo + 1, v.date, v.debit, v.credit, v.amount, v.memo]]);
-  if (v.note) { header_(sh, COL_NOTE, '메모'); sh.getRange(row, COL_CONFIRM, 1, 2).setValues([[v.confirm, v.note]]); }
-  else sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
-  // G~J열: 바로 위 행이 수식인데 이 행에 없으면 같은 수식을 이어 붙여요 (보통은 미리 채워져 있어 건너뜀)
-  if (lastData >= 2 && fm.slice(6, 10).some((x) => !x)) {
-    const src = sh.getRange(lastData, 7, 1, 4).getFormulasR1C1()[0];
-    const tv = sh.getRange(row, 7, 1, 4).getValues()[0];
-    src.forEach((f, j) => { if (f && !fm[6 + j] && tv[j] === '') sh.getRange(row, 7 + j).setFormulaR1C1(f); });
+  const row0 = lastData + 1, n = vs.length;
+  // 쓰기 전에 그 행들이 정말 비어 있는지 (위에서 읽은 값으로 확인: lastData 아래는 B~F가 비어 있어요)
+  for (let r = row0; r < row0 + n; r++) {
+    if (r - 2 < vals.length && vals[r - 2].slice(1).some((x) => x !== '' && x !== null)) throw new Error('분개장 ' + r + '행이 비어 있지 않아요. 새로고침 후 다시 시도해 주세요.');
   }
-  const rows = rowsOut_(sh, tz, [row]);
-  const no = Number(rows[0][1][0]) || maxNo + 1;
-  return { row: row, no: no, rows: rows };
+  const fm = sh.getRange(row0, 1, n, 10).getFormulasR1C1();   // A, G~J 수식 여부
+  if (fm.every((f) => f[0])) sh.getRange(row0, 2, n, 5).setValues(vs.map((v) => [v.date, v.debit, v.credit, v.amount, v.memo]));
+  else vs.forEach((v, k) => {
+    if (fm[k][0]) sh.getRange(row0 + k, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
+    else sh.getRange(row0 + k, 1, 1, 6).setValues([[maxNo + 1 + k, v.date, v.debit, v.credit, v.amount, v.memo]]);
+  });
+  if (vs.some((v) => v.note)) { header_(sh, COL_NOTE, '메모'); sh.getRange(row0, COL_CONFIRM, n, 2).setValues(vs.map((v) => [v.confirm, v.note || ''])); }
+  else sh.getRange(row0, COL_CONFIRM, n, 1).setValues(vs.map((v) => [v.confirm]));
+  // G~J열: 바로 위 행이 수식인데 이 행에 없으면 같은 수식을 이어 붙여요 (보통은 미리 채워져 있어 건너뜀)
+  if (lastData >= 2 && fm.some((f) => f.slice(6, 10).some((x) => !x))) {
+    const src = sh.getRange(lastData, 7, 1, 4).getFormulasR1C1()[0];
+    const tv = sh.getRange(row0, 7, n, 4).getValues();
+    fm.forEach((f, k) => src.forEach((s, j) => { if (s && !f[6 + j] && tv[k][j] === '') sh.getRange(row0 + k, 7 + j).setFormulaR1C1(s); }));
+  }
+  const rows = rowsOut_(sh, tz, vs.map((_, k) => row0 + k));
+  return rows.map((x, k) => ({ row: x[0], no: Number(x[1][0]) || maxNo + 1 + k, rows: [x] }));
 }
 
 function checkKey_(key) {
