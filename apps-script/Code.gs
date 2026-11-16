@@ -514,7 +514,8 @@ function makeKey() {
  */
 function api_(p) {
   const FNS = { getData: getData, setConfirm: setConfirm, updateEntry: updateEntry, voidEntry: voidEntry, addEntry: addEntry, saveVoucher: saveVoucher,
-    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse };
+    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse,
+    taskInbox: taskInbox, taskApply: taskApply };
   const f = Object.prototype.hasOwnProperty.call(FNS, p.fn) ? FNS[p.fn] : null;
   if (!f) return { ok: false, error: '알 수 없는 요청이에요: ' + p.fn };
   try {
@@ -522,6 +523,112 @@ function api_(p) {
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }
+}
+
+/* ===================== 야간 예약 작업용 API (taskInbox / taskApply) ===================== */
+/**
+ * Claude 예약 작업은 시트를 직접 쓰지 않고 이 두 API만 써요 → 모든 쓰기가 서버 잠금·검증·변경이력을 거쳐요.
+ * 키: 스크립트 속성 TASK_KEY (예약 작업 전용, makeTaskKey()로 발급). 앱 접속 키(APP_KEY)도 허용.
+ */
+function checkTaskKey_(key) {
+  const pr = PropertiesService.getScriptProperties();
+  const t = pr.getProperty('TASK_KEY'), a = pr.getProperty('APP_KEY');
+  key = String(key || '');
+  return !!key && ((!!t && key === t) || (!!a && key === a));
+}
+function makeTaskKey() {
+  const key = Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('TASK_KEY', key);
+  Logger.log('예약 작업 키: ' + key);
+}
+/** 대기 알림(처리상태 빈칸) + 서버 추천 + 계정·규칙 + 최근 전표 150행 */
+function taskInbox(key) {
+  if (!checkTaskKey_(key)) throw new Error('예약 작업 키가 맞지 않아요.');
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const tz = ss.getSpreadsheetTimeZone();
+  const J = journalVals_(ss.getSheetByName('분개장'), tz);
+  const rules = readRules_(ss), accts = accountsOut_(ss);
+  const ib = readInbox_(ss, { journal: J, rules: rules, accounts: accts });
+  if (ib.error) throw new Error('수신함을 읽지 못했어요: ' + ib.error);
+  const pending = ib.rows.filter((r) => !r[3] && String(r[2]).trim()).map((r) => {
+    const g = r[6] || {};
+    return { id: r[0], at: r[1], text: r[2], memo: r[5],
+      sug: { date: g.date || '', debit: g.debit || '', credit: g.credit || '', amount: g.amount || 0, memo: g.memo || '', basis: g.basis || '', why: g.why || g.hint || '' } };
+  });
+  const recent = [];
+  for (let i = J.length - 1; i >= 0 && recent.length < 150; i--) {
+    const r = J[i];
+    if (!String(r[1] || '').trim()) continue;
+    recent.push({ row: i + 2, no: r[0], date: r[1], debit: r[2], credit: r[3], amount: r[4], memo: r[5], confirm: r[10], grp: r[12] || '', note: String(r[11] || '').slice(0, 300) });
+  }
+  return {
+    today: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'),
+    inboxSheet: ib.id === SPREADSHEET_ID ? '가계부 안 수신함' : '예전 수신함(구글 폼)',
+    pending: pending,
+    accounts: accts.filter((a) => String(a[1]).trim()).map((a) => ({ code: a[0], name: a[1], type: a[2], fsg: a[4], active: String(a[6]) !== '사용중지' })),
+    rules: rules.map((r) => ({ keyword: r[0], debit: r[1], credit: r[2], desc: r[3] })),
+    recent: recent,
+  };
+}
+/**
+ * 처리 결과 반영. ops: [{id(수신함 행 번호, taskInbox의 id), status('처리됨'|'보류'|'일부보류'|'중복'), memo,
+ *   entries?: [{date, debit, credit, amount, memo, note} | {date, memo, note, lines:[{side:'차'|'대', acct, amount}]}],
+ *   voids?: [{row, no, reason}] }]
+ * 알림 하나(op)마다 먼저 전부 검사하고, 문제가 없을 때만 써요(일부만 쓰지 않음). 이미 처리된 알림은 건너뛰어요.
+ * 전표는 항상 '미확인'. 무효는 '미확인'이고 여러 줄 전표가 아닌 행만.
+ */
+function taskApply(key, ops) {
+  if (!checkTaskKey_(key)) throw new Error('예약 작업 키가 맞지 않아요.');
+  ops = Array.isArray(ops) ? ops : [];
+  if (ops.length > 60) throw new Error('한 번에 60건까지예요.');
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const tz = ss.getSpreadsheetTimeZone();
+    const sh = ss.getSheetByName('분개장');
+    const OK = ['처리됨', '보류', '일부보류', '중복'];
+    const results = [];
+    ops.forEach((op) => {
+      const res = { id: op && op.id, ok: false };
+      results.push(res);
+      try {
+        if (OK.indexOf(op.status) < 0) throw new Error('처리상태가 이상해요: ' + op.status);
+        const ref = inboxRef_(ss, op.id);
+        const cur = ref.sh.getRange(ref.row, 2, 1, 2).getDisplayValues()[0];
+        if (!String(cur[0]).trim()) throw new Error('빈 수신함 행이에요.');
+        if (String(cur[1]).trim()) { res.skipped = '이미 처리된 알림(' + cur[1] + ')'; return; }
+        // 1) 검사: 전표는 쌍으로 바꿔 clean_, 무효 대상은 미확인·단일 전표인지
+        const groups = (op.entries || []).map((e) => {
+          const base = { date: e.date, memo: e.memo, note: e.note, confirm: '미확인' };
+          const pairs = e.lines ? splitLines_(Object.assign(base, { lines: e.lines })) : [Object.assign(base, { debit: e.debit, credit: e.credit, amount: e.amount })];
+          return pairs.map((p) => clean_(ss, Object.assign(p, { confirm: '미확인' })));
+        });
+        const voids = (op.voids || []).map((v) => {
+          const b = readRow_(sh, v.row, v.no);
+          if (String(b[COL_CONFIRM - 1]).trim() !== '미확인') throw new Error('전표 ' + v.no + '번은 미확인이 아니라 무효 처리하지 않았어요(' + b[COL_CONFIRM - 1] + ').');
+          if (String(b[COL_GRP - 1]).trim()) throw new Error('전표 ' + v.no + '번은 여러 줄 전표라 무효 처리하지 않았어요.');
+          return { row: Number(v.row), no: v.no, reason: String(v.reason || '').trim(), before: b };
+        });
+        if (op.status === '처리됨' && !groups.length && !voids.length && !/거래 아님|제외/.test(String(op.memo || ''))) throw new Error('처리됨인데 전표·무효가 없어요(거래가 아니면 메모에 "거래 아님(제외)").');
+        // 2) 쓰기
+        const nos = [], logs = [];
+        groups.forEach((pairs) => {
+          const out = writeEntries_(sh, tz, pairs);
+          if (out.length > 1) { header_(sh, COL_GRP, '묶음'); sh.getRangeList(out.map((o) => 'M' + o.row)).setValue(String(out[0].no)); }
+          out.forEach((o, k) => { nos.push(o.no); logs.push(['[예약] 전표 추가 (수신함 ' + (ref.id < 0 ? '시트 ' : '') + ref.row + '행)', o.row, null, Object.assign({ no: o.no }, pairs[k])]); });
+        });
+        voids.forEach((v) => {
+          sh.getRange(v.row, COL_CONFIRM).setValue(VOID);
+          logs.push(['[예약] 전표 무효' + (v.reason ? ' (' + v.reason + ')' : ''), v.row, v.before[COL_CONFIRM - 1], VOID]);
+        });
+        ref.sh.getRange(ref.row, 3, 1, 3).setValues([[op.status, nos.join(', '), ('[예약] ' + String(op.memo || '')).trim()]]);
+        logMany_(ss, logs);
+        res.ok = true; res.nos = nos; res.voided = voids.map((v) => v.no);
+      } catch (err) {
+        res.error = String((err && err.message) || err);
+      }
+    });
+    return { results: results };
+  });
 }
 
 /* ===================== 단축어 → 바로 입력 (doPost) ===================== */
