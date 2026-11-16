@@ -38,7 +38,8 @@
 | 예약 작업 | Claude 앱의 예약 작업 "가계부 수신함 정리", 매일 00:05 KST. 지시문 수정은 Claude 앱에서 |
 
 ## 시트 구조 (가계부)
-- **분개장** A 전표번호 / B 날짜 / C 차변계정 / D 대변계정 / E 금액 / F 적요 / G 연월 / H 차변구분 / I 대변구분 / J 검증 / K 확인 / L 메모
+- **분개장** A 전표번호 / B 날짜 / C 차변계정 / D 대변계정 / E 금액 / F 적요 / G 연월 / H 차변구분 / I 대변구분 / J 검증 / K 확인 / L 메모 / M 묶음
+  - **M 묶음 = 여러 줄 전표(복합분개)**: 차변·대변 여러 줄을 "차 1 / 대 1" 쌍으로 나눠 여러 행에 쓰고, 그 행들 M에 같은 값(첫 행 전표번호). 일반 전표는 M 빈칸. 행마다 차대가 맞아서 시트 수식은 그대로. 묶음은 무효·확인·수정을 **묶음 전체로만**(일부 행만 바꾸지 않기).
   - **F 적요 = 사람이 쓰거나 추천값**(분류규칙의 기본 적요 → 가맹점명), **L 메모 = 알림 원문·참고**. 원문을 적요에 넣지 않기. (2026-11 이전 전표는 `적요 (알림: 원문)` 꼴 → `splitMemoRun()`으로 분리)
   - ⚠️ **A열은 자동번호 수식** `=IF(ISBLANK(Bn),"",A(n-1)+1)`, **G~J열도 수식이 1000행 아래까지 미리 채워져 있음.**
     → 코드든 사람이든 **B~F, K, L만 쓰기.** A·G~J에 값을 쓰면 번호 체계가 깨짐.
@@ -74,7 +75,8 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
   - `setConfirm(key, items[{row,no}], '확인'|'미확인')` — 무효 행은 건너뜀
   - `voidEntry(key, row, no, on)` — K를 `무효`로 / 취소하면 `미확인`. 무효 행은 `updateEntry` 거부
   - `updateEntry(key, row, no, f)` — B~F, K, L 수정
-  - `addEntry(key, f, ib?)` — 마지막 데이터 행 아래에 B~F, K, L(`writeEntry_`, 자동 입력과 공용). 수신함 행이면 `처리됨`(`ib.row` 음수면 가계부 안 수신함), `f.rule {keyword, desc}`가 있으면 분류규칙(기본 적요 포함) 저장
+  - `saveVoucher(key, refs[{row,no}], {date,memo,note,confirm,lines[{side:'차'|'대',acct,amount}]}, ib?)` — 여러 줄 전표 저장. `splitLines_`(차·대 줄을 순서대로 작은 금액만큼 떼어 쌍으로, 앱 `vPairs`와 같은 방식) → 기존 행은 제자리 수정, 늘면 맨 아래 추가(`writeEntries_`), 줄면 남는 행 `무효`+M 비움. 남은 행 2개 이상이면 M에 묶음 값, 1개면 M 비움. 메모(L)는 첫 행만. `voidEntry`는 M이 있으면 묶음 전체, `updateEntry`는 묶음 행 거부.
+  - `addEntry(key, f, ib?)` — 마지막 데이터 행 아래에 B~F, K, L(`writeEntry_`→`writeEntries_`, 자동 입력과 공용). 수신함 행이면 `처리됨`(`ib.row` 음수면 가계부 안 수신함), `f.rule {keyword, desc}`가 있으면 분류규칙(기본 적요 포함) 저장
   - 필드 이름: `f.memo` = 적요(F), `f.note` = 메모(L). `header_()`가 L1/분류규칙 F1 제목이 비어 있으면 채움
   - `checkRow_` — 앱이 아는 행과 시트의 전표번호가 같은지 확인(행이 밀렸으면 거부). `clean_` — 입력값 검사
 - 설정(모두 잠금 + 변경이력): `saveRule(key, {row?, kw?, keyword, debit, credit, desc})`, `deleteRule(key, row, kw)`(행의 키워드가 같을 때만), `addAccount(key, {type, code, name, fsg})`(맨 아래 추가, 코드·이름 중복·범위 검사), `setAccountUse(key, code, name, on)`(G열). `readRules_`는 각 규칙의 시트 행을 5번째 값으로 돌려줌.
@@ -83,7 +85,8 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
   - ⚠️ 체크카드 이중 알림(승인 + 출금)이 둘 다 규칙에 맞으면 전표가 두 번 생길 수 있음 → 미확인으로 남으니 앱에서 무효 처리.
 - `splitMemoPreview()` / `splitMemoRun()` — 1회용. 적요의 `(알림: …)`을 L열로 옮김(L이 빈 행만, 변경이력 기록). 편집기에서 실행.
 
-**Index.html** (한 파일, 약 1,800줄)
+**Index.html** (한 파일, 약 2,300줄)
+- 여러 줄 전표: `build`가 M 묶음의 첫 행을 대표(`grpRows`, `lines`, `total`), 나머지는 `sub`(`lead`)로 표시. 목록·상세는 `D.list`(대표만), 집계·시산표는 행 단위 `D.journal`/`valid`. 원장은 같은 묶음·같은 방향 줄을 합치고 상대 계정이 여럿이면 `제좌`. 입력 폼은 줄 단위(`jlRow`/`jlRead`/`jlSum`, 계정·차변·대변, 줄 추가 시 차액 자동 채움). 한 쌍이면 `addEntry`/`updateEntry`, 아니면 `saveVoucher`. 상세는 `.vt` 표(구분·코드·계정·차변·대변·합계).
 - 상태 `S`, 데이터 가공 `build(raw)`, 화면 `VIEWS`(summary=홈, bs, is, trial, journal, ledger, monthly, inbox), `render()`.
 - 홈: `homeView()`, `spend(ym)`(기준일: 오늘 전표가 없으면 어제), `lineChart()`(일별 막대+누적 선), `wcard`, `hcard`, `headline()`/`greetText()`(시간대별 인사말).
 - 불러오기: `homeSkeleton()`/`skeleton()`(틀) → 데이터 오면 `S.reveal`로 차례로 등장 + `runCount()` 숫자 애니메이션.
@@ -116,7 +119,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 ## 디자인
 - 포인트 주황 + 검은 글자·아이콘. 토큰: 라이트 `--bg #f3f4f6, --panel #fff, --fg #111214, --muted #8b9099, --accent #f0712c` / 다크 `--bg #14171d, --panel #1d2027, --fg #f2f3f5, --accent #ff8a4c`.
 - 글꼴 Pretendard(jsDelivr). 카드 모서리 24px, 위젯 카드·사각 버튼(14px), 선택된 탭은 채운 아이콘.
-- **Liquid Glass(폰)**: Index.html 스타일 맨 끝 블록. 유리(`backdrop-filter`)는 떠 있는 요소(탭 바·홈 상단 버튼·하단 시트·토스트)에만, 카드 본문은 불투명 유지(금액 가독성·성능).
+- **Liquid Glass(폰)**: Index.html 스타일 맨 끝 블록. 하단 시트(`.drawer`)는 좌우·아래를 화면 끝에 붙이고 위 모서리만 34px(아이폰 화면 곡률과 어긋나지 않게, 2026-11-16). 유리(`backdrop-filter`)는 떠 있는 요소(탭 바·홈 상단 버튼·하단 시트·토스트)에만, 카드 본문은 불투명 유지(금액 가독성·성능).
   - 탭 바: 선택 알약 `.tb-pill`은 칸 번호 `--i`로 위치 계산(`S.tabI`에서 새 칸으로 스프링 이동). 스크롤 내리면 `.tabbar.min`(좌우 46px·글자 숨김, 접힐 땐 빠르게/펼칠 땐 `--spring`), 손가락 위치 `--mx`로 반사광.
   - 스프링은 CSS `linear()` 이징(`--spring`, `--spring-soft`). `prefers-reduced-motion`이면 전환 끔.
   - 웹 한계: 실제 굴절(렌즈), 기울기 반사광, 햅틱은 Safari에서 불가 → 하이라이트로 흉내.
