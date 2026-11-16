@@ -24,8 +24,9 @@
 - 환경 변수 LEDGER_API_URL, LEDGER_TASK_KEY가 없으면 아무것도 하지 말고 "환경 변수 없음"만 보고하고 끝내.
 
 ## 1. 대기 알림 받기 (taskInbox)
-python3 -c 'import json,os;print(json.dumps({"k":os.environ["LEDGER_TASK_KEY"],"fn":"taskInbox","args":[]}))' > /tmp/req.json
+python3 -c 'import json,os;print(json.dumps({"k":os.environ["LEDGER_TASK_KEY"].strip(),"fn":"taskInbox","args":[]}))' > /tmp/req.json
 curl -sS -L -m 120 -H 'Content-Type: text/plain;charset=utf-8' --data-binary @/tmp/req.json "$LEDGER_API_URL" > /tmp/inbox.json
+rm -f /tmp/req.json   # 키가 들어 있어 바로 지워
 - 응답 JSON의 ok가 true가 아니거나 연결이 안 되면(403·시간 초과 등) 아무것도 쓰지 말고 오류 내용만 보고하고 끝내. 시트에 직접 쓰는 우회는 절대 하지 마.
 - data 구성: pending(대기 알림: id, at, text, memo, sug), accounts(계정과목: name, type, active), rules(분류규칙), recent(최근 전표 150건: row, no, date, debit, credit, amount, memo, confirm, grp, note), today.
 - pending이 비어 있으면 '대기 건 없음' 한 줄로 끝내.
@@ -51,8 +52,9 @@ ops = [{ "id": pending의 id, "status": "처리됨"|"보류"|"일부보류"|"중
          "entries": [{ "date", "debit", "credit", "amount", "memo", "note" } 또는 { "date", "memo", "note", "lines": [...] }],
          "voids": [{ "row", "no", "reason" }] }]
 - ops를 /tmp/ops.json(UTF-8, JSON 배열)로 저장하고:
-python3 -c 'import json,os;print(json.dumps({"k":os.environ["LEDGER_TASK_KEY"],"fn":"taskApply","args":[json.load(open("/tmp/ops.json",encoding="utf-8"))]},ensure_ascii=False))' > /tmp/req.json
+python3 -c 'import json,os;print(json.dumps({"k":os.environ["LEDGER_TASK_KEY"].strip(),"fn":"taskApply","args":[json.load(open("/tmp/ops.json",encoding="utf-8"))]},ensure_ascii=False))' > /tmp/req.json
 curl -sS -L -m 300 -H 'Content-Type: text/plain;charset=utf-8' --data-binary @/tmp/req.json "$LEDGER_API_URL" > /tmp/apply.json
+rm -f /tmp/req.json
 - 한 번에 60건까지. 넘으면 나눠서 보내.
 - 응답 data.results에서 ok:false(error)·skipped인 건을 확인해. 오류가 고칠 수 있는 것(계정 이름 오타 등)이면 고쳐서 그 건만 한 번 더 보내고, 아니면 보고만.
 - 전표는 서버가 항상 '미확인'으로 넣고, 무효는 '미확인'·단일 전표만 돼.
@@ -63,4 +65,5 @@ curl -sS -L -m 300 -H 'Content-Type: text/plain;charset=utf-8' --data-binary @/t
 - 보류·실패 목록과 이유
 - 무효 처리한 전표와 이유
 - 분류규칙 추가 제안(같은 가맹점이 2번 이상 규칙 없이 들어온 경우). 규칙은 직접 추가하지 말고 제안만.
+- 끝나면 /tmp/inbox.json, /tmp/ops.json, /tmp/apply.json 지우기.
 ```
