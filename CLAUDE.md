@@ -1,6 +1,6 @@
 # 복식부기 가계부 앱 — 프로젝트 안내 (Claude용)
 
-개인 복식부기 가계부. **데이터는 구글 시트**, **화면은 Apps Script 웹앱**, **아이폰 홈 화면 앱처럼 보이게 하는 껍데기는 GitHub Pages**.
+개인 복식부기 가계부. **데이터는 구글 시트**, **화면은 GitHub Pages에서 직접**(`apps-script/Index.html`을 Pages가 그대로 제공), **데이터는 Apps Script 웹앱 API(`doPost`)로**. (2026-11-16부터. 예전 방식 = 껍데기 iframe 안에 Apps Script 화면, `#classic`으로 남겨 둠)
 결제·입출금 알림은 iPhone 단축어 → 웹앱 `doPost`(가계부 안 `수신함` 시트) → 분류규칙에 맞으면 바로 `미확인` 전표, 안 맞으면 대기 → 남은 건은 매일 00:05 Claude 예약 작업이 처리. (예전 경로: 단축어 → 구글 폼 → 수신함 파일)
 
 ## 사용자와 일하는 방식
@@ -13,14 +13,14 @@
 ## 저장소 구조
 ```
 /                     ← GitHub Pages로 그대로 공개됨 (공개 저장소)
-├─ index.html         껍데기 페이지 (반드시 소문자 index.html)
+├─ index.html         첫 화면: 연결 설정 → 앱 화면(apps-script/Index.html)으로 이동. #classic이면 예전 iframe 방식 (반드시 소문자 index.html)
 ├─ icon.png           홈 화면 아이콘 180×180 (바꾸면 index.html의 ?v=N도 올리기)
 ├─ icon-512.png
 ├─ apps-script/       clasp로 Apps Script 프로젝트와 연결된 폴더
 │  ├─ .clasp.json     scriptId
 │  ├─ appsscript.json 매니페스트 (시간대 Asia/Seoul, 웹앱: 나로 실행 / 모든 사용자)
 │  ├─ Code.gs         서버 (clasp에 따라 Code.js로 보일 수 있음)
-│  └─ Index.html      앱 화면 전체 (HTML+CSS+JS 한 파일)
+│  └─ Index.html      앱 화면 전체 (HTML+CSS+JS 한 파일). Pages에서 /accounting/apps-script/Index.html로도 열림(WEB 모드)
 ├─ tools/preview.js   가짜 서버로 앱 화면을 띄워 캡처하는 테스트 (Playwright)
 ├─ CLAUDE.md
 └─ SETUP.md           사람용 준비 순서
@@ -103,7 +103,19 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - **샘플 데이터 모드**(전체 → 보여주기, PC는 사이드바 아래): `setDemo(on)`, `sampleRaw()`(고정 시드로 최근 3개월 가짜 장부·수신함·규칙). 켜져 있으면 `api()`가 모든 쓰기를 거부, `load()`는 서버를 부르지 않음, 늦게 온 실제 데이터는 `S.realRaw`에 보관만. 플래그는 앱 localStorage `ledger-demo` + 껍데기 `ledger-demo-mode` 양쪽(앱 저장 공간이 지워져도 시작 때 실제 데이터가 안 보이게). 홈 상단에 '샘플' 표시.
 - 폰(≤860px)은 iOS식 목록·하단 시트·당겨서 새로고침·push/pop 전환, PC는 사이드바+카드.
 
-## GitHub 껍데기(`index.html`)와 앱 사이 통신 (postMessage)
+## 실행 방식 두 가지 (같은 Index.html)
+| | **WEB (기본)** | **GAS (예전·#classic)** |
+|---|---|---|
+| 화면 | GitHub Pages의 `apps-script/Index.html`을 직접 엶 (`index.html`이 head에서 바로 이동) | `index.html` 안 iframe에 Apps Script 웹앱 화면 |
+| 데이터 | `call()` → `rpc()`: `fetch(웹앱 주소, POST, Content-Type text/plain, {k, fn, args})` → 서버 `doPost` → `api_`(허용 목록: getData·setConfirm·updateEntry·voidEntry·addEntry·saveVoucher·saveRule·deleteRule·addAccount·setAccountUse) → `{ok, data}` / `{ok:false, error}` | `google.script.run` |
+| 판별 | head 스크립트 `WEB = !google.script.run`, 설정 `CFG` = localStorage `ledger-app-settings` {url, key, mode}. 설정 없으면 `../index.html`로 | |
+| 캐시 | 같은 출처 localStorage `ledger-cache-v1` (없으면 예전 껍데기 캐시 `ledger-data-cache`) | 앱 localStorage + 껍데기에 postMessage |
+| 상단 | `html.web body{padding-top:env(safe-area-inset-top)}` (예전 iframe 위치와 같게) | 껍데기 iframe이 상태 표시줄 아래 |
+- 전환: `index.html#classic`(mode='classic' 저장) / `#web` / `#reset`. 홈 화면 앱은 주소창이 없어서 **앱 전체 → 정보**에 '예전 방식으로 열기'(WEB)·'새 방식으로 열기'(GAS iframe 안) 링크가 있음. 사파리와 홈 화면 앱은 저장 공간이 따로.
+- `text/plain` POST라서 사전 요청(preflight)이 없음. Apps Script는 302 → `script.googleusercontent.com`로 응답을 넘김(브라우저가 따라감). 웹앱은 '모든 사용자' 접근이어야 함.
+- `doPost` 본문에 `fn`이 있으면 앱 API(APP_KEY), 없으면 단축어 입력(INGEST_KEY).
+
+## (예전 방식) 껍데기(`index.html`)와 앱 사이 통신 (postMessage)
 | 메시지 | 방향 | 의미 |
 |---|---|---|
 | `ledger-hello` | 앱 → 껍데기 | 저장된 데이터 달라 |
@@ -115,7 +127,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - 웹앱 주소·키는 껍데기의 localStorage `ledger-app-settings`에만 저장(저장소에 없음). 주소 끝에 `#reset`이면 초기화.
 
 ## 아이폰 관련 주의
-- 앱(구글 주소 iframe) 안의 저장 공간은 아이폰에서 지워짐 → 캐시는 껍데기 쪽에 둠.
+- (예전 방식) 앱(구글 주소 iframe) 안의 저장 공간은 아이폰에서 지워짐 → 캐시는 껍데기 쪽에 둠. WEB 방식은 같은 출처라 해당 없음.
 - 홈 화면 아이콘은 추가할 때 고정됨. 아이콘을 바꾸면 `?v=N`을 올리고 아이콘을 지웠다 다시 추가해야 하고, 그러면 주소·키를 다시 입력해야 함.
 - **껍데기의 시작 화면(`.sp-m`)은 앱 홈의 틀과 위치가 똑같아야 전환이 자연스러움.** 홈 레이아웃(간격, 카드, 상단 버튼)을 바꾸면 `index.html`의 시작 화면과 `homeSkeleton()`도 같이 맞추기.
 - 하단 탭 바: `bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px))`.

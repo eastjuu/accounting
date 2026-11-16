@@ -506,6 +506,24 @@ function makeKey() {
   Logger.log('비밀키: ' + key);
 }
 
+/* ===================== 앱 데이터 API (GitHub Pages 화면 → doPost) ===================== */
+/**
+ * 앱 화면이 GitHub Pages에서 직접 열릴 때는 google.script.run 대신 이 API를 fetch로 불러요.
+ * 본문(JSON, Content-Type text/plain): {k: 접속 키(APP_KEY), fn: 함수 이름, args: [...]} → {ok, data} 또는 {ok:false, error}
+ * 함수마다 첫 인자로 키를 받아 직접 검사하니(checkKey_), 여기서는 허용 목록만 확인해요.
+ */
+function api_(p) {
+  const FNS = { getData: getData, setConfirm: setConfirm, updateEntry: updateEntry, voidEntry: voidEntry, addEntry: addEntry, saveVoucher: saveVoucher,
+    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse };
+  const f = Object.prototype.hasOwnProperty.call(FNS, p.fn) ? FNS[p.fn] : null;
+  if (!f) return { ok: false, error: '알 수 없는 요청이에요: ' + p.fn };
+  try {
+    return { ok: true, data: f.apply(null, [p.k].concat(Array.isArray(p.args) ? p.args : [])) };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
 /* ===================== 단축어 → 바로 입력 (doPost) ===================== */
 /**
  * 아이폰 단축어가 알림 한 건을 웹앱 주소로 POST 해요. 본문(JSON): {"k": 단축어 키, "text": 알림 원문}
@@ -519,6 +537,7 @@ function doPost(e) {
   let body = {};
   try { body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {}; } catch (err) { body = {}; }
   const p = Object.assign({}, (e && e.parameter) || {}, body);
+  if (p.fn) return json(api_(p));   // 앱 화면(GitHub Pages)의 데이터 요청
   const saved = PropertiesService.getScriptProperties().getProperty('INGEST_KEY');
   if (!saved || String(p.k || '') !== saved) return json({ ok: false, msg: '키가 맞지 않아요' });
   const text = String(p.text || '').trim();

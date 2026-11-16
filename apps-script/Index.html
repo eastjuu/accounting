@@ -3,7 +3,28 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="가계부">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171d" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="../icon.png?v=2">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <title>가계부</title>
+<script>
+/* 실행 방식: Apps Script 안(google.script.run) 또는 GitHub Pages에서 직접(WEB, fetch로 데이터 API 호출).
+   WEB인데 연결 설정이 없으면 첫 화면(설정)으로 보내요. */
+var WEB = !(window.google && google.script && google.script.run);
+var CFG = null;
+if (WEB) {
+  try { CFG = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); } catch (e) {}
+  if (!(CFG && CFG.url && CFG.key) && location.protocol === 'https:') location.replace('../index.html');
+  document.documentElement.classList.add('web');
+}
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
@@ -25,6 +46,7 @@
 }}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;-webkit-text-size-adjust:100%}
+html.web body{box-sizing:border-box;padding-top:env(safe-area-inset-top)}
 button,select,input{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:220px 1fr;height:100%}
 
@@ -679,7 +701,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16d';
+const APP_VER = '2026.11.16e';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -1593,9 +1615,29 @@ function closeEntry() {
 /* ===== 쓰기: 확인 처리 · 전표 수정 · 수신함 알림을 전표로 ===== */
 function api(fn, ...args) {
   if (S.demo) return Promise.reject(new Error('샘플 데이터에서는 저장되지 않아요'));
+  return call(fn, args);
+}
+/* 서버 호출: Apps Script 안이면 google.script.run, GitHub Pages면 fetch로 웹앱 데이터 API(doPost) */
+function call(fn, args) {
+  if (WEB) return rpc(fn, args);
   return new Promise((res, rej) => withKey((key) => google.script.run
     .withSuccessHandler(res)
     .withFailureHandler((err) => rej(err && err.message ? err : new Error(String(err))))[fn](key, ...args)));
+}
+function rpc(fn, args) {
+  if (!CFG) return Promise.reject(new Error('연결 설정이 없어요'));
+  const ac = typeof AbortController === 'function' ? new AbortController() : null;
+  const tm = ac && setTimeout(() => ac.abort(), 45000);
+  // text/plain 본문 = 사전 요청(preflight) 없이 보내는 방식 (Apps Script 웹앱은 OPTIONS를 못 받아요)
+  return fetch(CFG.url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body:JSON.stringify({ k:CFG.key, fn, args }), redirect:'follow', cache:'no-store', signal:ac ? ac.signal : undefined })
+    .then((r) => { if (!r.ok) throw new Error('서버 응답 ' + r.status); return r.text(); })
+    .then((t) => {
+      let j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (!j) throw new Error('서버 응답을 읽지 못했어요. 웹앱 배포를 확인해 주세요');
+      if (!j.ok) throw new Error(j.error || '처리하지 못했어요');
+      return j.data;
+    }, (err) => { throw new Error(err && err.name === 'AbortError' ? '서버 응답이 너무 늦어요' : '연결하지 못했어요 · 인터넷 연결을 확인해 주세요'); })
+    .finally(() => { if (tm) clearTimeout(tm); });
 }
 /* 저장 뒤: 서버가 돌려준 바뀐 부분(행·수신함·규칙·계정)만 반영해요. 전체 다시 불러오기를 생략해서 바로 보여요.
    서버가 바뀐 부분을 안 주면(예전 서버) 전체를 다시 불러와요. */
@@ -1889,7 +1931,10 @@ function moreView() {
     sec('보여주기', '<label class="ios-row"><div class="tx"><div class="t1">샘플 데이터로 보기</div><div class="t2" style="white-space:normal">다른 사람에게 보여줄 때 · 내 장부는 그대로이고 저장은 막혀요</div></div><input type="checkbox" class="sw" data-act="demo"' + (S.demo ? ' checked' : '') + ' aria-label="샘플 데이터로 보기"></label>') +
     sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
       (S.demo ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
-      row1('', '앱 버전', '', APP_VER));
+      row1('', '앱 버전', '', APP_VER + (WEB ? ' · 웹' : ' · 구글')) +
+      (WEB ? '<a class="ios-row act" href="../index.html#reset"><div class="tx"><div class="t1">연결 다시 설정</div><div class="t2">웹앱 주소·비밀키를 다시 입력해요</div></div>' + CHEV + '</a>' +
+        '<a class="ios-row act" href="../index.html#classic"><div class="tx"><div class="t1">예전 방식으로 열기</div><div class="t2">문제가 있을 때 · 구글 화면을 iframe으로 열어요</div></div>' + CHEV + '</a>'
+      : inShell ? '<a class="ios-row act" href="https://eastjuu.github.io/accounting/#web" target="_top"><div class="tx"><div class="t1">새 방식으로 열기</div><div class="t2">GitHub Pages에서 바로 열어 시작이 빨라요</div></div>' + CHEV + '</a>' : ''));
 }
 function rulesView() {
   const list = S.D.rules.slice().sort((a, b) => a.kw.localeCompare(b.kw, 'ko'));
@@ -2194,8 +2239,7 @@ function load() {
   if (S.D) $('ptr').classList.add('spin');
   document.querySelectorAll('.sq.rf').forEach((el) => el.classList.add('spin'));   // 처음(틀만 보일 때)은 틀 자체가 로딩 표시
   document.querySelectorAll('.lt-sub').forEach((el) => { if (S.D) el.textContent = '새로 불러오는 중…'; });
-  withKey((key) => google.script.run
-    .withSuccessHandler((raw) => {
+  call('getData', []).then((raw) => {
       if ((S.wv || 0) !== wv) { S.loading = false; load(); return; }   // 불러오는 사이에 저장됨 → 옛 데이터라 다시 불러와요
       S.loading = false; S.error = null; S.note = null;
       $('refresh').classList.remove('spin');
@@ -2211,8 +2255,7 @@ function load() {
       } catch (err) { S.error = err.message; }
       if (S.sel) { const r = S.sel; render(); openEntry(r); } else render();
       readyOnce();
-    })
-    .withFailureHandler((err) => {
+    }, (err) => {
       S.loading = false;
       $('refresh').classList.remove('spin');
       $('ptr').classList.remove('spin');
@@ -2220,15 +2263,14 @@ function load() {
       if (S.D) S.note = msg; else S.error = msg;   // 저장된 데이터가 있으면 그대로 보여줘요
       render();
       readyOnce();
-    })
-    .getData(key));
+    });
 }
 /* ===== 샘플 데이터 모드: 다른 사람에게 보여줄 때. 저장은 막고, 실제 데이터는 화면에 그리지 않아요 ===== */
 const DEMO_KEY = 'ledger-demo';
-function demoFlag() { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch (e) { return false; } }
+function demoFlag() { try { return localStorage.getItem(DEMO_KEY) === '1' || (WEB && localStorage.getItem('ledger-demo-mode') === '1'); } catch (e) { return false; } }
 function setDemo(on, quiet) {
   S.demo = on;
-  try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY); } catch (e) {}
+  try { if (on) localStorage.setItem(DEMO_KEY, '1'); else { localStorage.removeItem(DEMO_KEY); localStorage.removeItem('ledger-demo-mode'); } } catch (e) {}
   toShell({ type:'ledger-demo', on });
   closeEntry(); S.stack = []; S.st = ''; S.q = ''; S.ib = ''; S.account = null; S.hm = 0; S.tabI = null;
   if (on) S.D = build(sampleRaw());
@@ -2319,7 +2361,7 @@ function withKey(cb) {
 }
 /* 마지막으로 받은 데이터를 이 기기에 저장해 두고, 다음에 열 때 먼저 보여줘요 */
 const CACHE = 'ledger-cache-v1';
-function cacheRead() { try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); return c && Array.isArray(c.journal) && Array.isArray(c.accounts) ? c : null; } catch (e) { return null; } }
+function cacheRead() { try { const c = JSON.parse(localStorage.getItem(CACHE) || (WEB ? localStorage.getItem('ledger-data-cache') : null) || 'null'); return c && Array.isArray(c.journal) && Array.isArray(c.accounts) ? c : null; } catch (e) { return null; } }
 function cacheWrite(raw) { try { localStorage.setItem(CACHE, JSON.stringify(raw)); } catch (e) {} }
 /* GitHub 껍데기 페이지와 주고받기
    - 아이폰은 이 화면(구글 주소) 안의 저장 공간을 지워 버려서, 마지막 데이터를 껍데기 쪽에 맡겨 둬요

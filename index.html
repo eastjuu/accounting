@@ -13,6 +13,23 @@
 <link rel="apple-touch-icon" href="icon.png?v=2">
 <link rel="icon" type="image/png" href="icon-512.png?v=2">
 <title>가계부</title>
+<script>
+  // 시작: 연결 설정이 있으면 앱 화면(같은 GitHub Pages의 apps-script/Index.html)으로 바로 넘어가요.
+  //  - 앱 화면이 구글 iframe 없이 여기서 직접 열리고, 데이터만 웹앱 API(doPost)로 받아요 → 첫 화면이 빨라요.
+  //  - 주소 끝 #reset: 설정 초기화 / #classic: 예전 방식(구글 화면을 iframe으로) / #web: 다시 새 방식
+  (function () {
+    var S = 'ledger-app-settings', cfg = null, h = location.hash;
+    try { cfg = JSON.parse(localStorage.getItem(S) || 'null'); } catch (e) {}
+    var save = function () { try { localStorage.setItem(S, JSON.stringify(cfg)); } catch (e) {} };
+    if (h === '#reset') {
+      try { localStorage.removeItem(S); localStorage.removeItem('ledger-data-cache'); localStorage.removeItem('ledger-cache-v1'); } catch (e) {}
+      history.replaceState(null, '', location.pathname); return;
+    }
+    if (cfg && h === '#classic') { cfg.mode = 'classic'; save(); history.replaceState(null, '', location.pathname); }
+    if (cfg && h === '#web') { delete cfg.mode; save(); history.replaceState(null, '', location.pathname); }
+    if (cfg && cfg.url && cfg.key && cfg.mode !== 'classic') location.replace('apps-script/Index.html');
+  })();
+</script>
 <!-- 구글 서버·글꼴 서버와 미리 연결해 두어 첫 로딩을 조금이라도 줄여요 -->
 <link rel="preconnect" href="https://script.google.com">
 <link rel="preconnect" href="https://script.googleusercontent.com">
@@ -138,16 +155,15 @@
   function read() { try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { return null; } }
   function write(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); return true; } catch (e) { return false; } }
 
-  // 주소 끝에 #reset 을 붙여 열면 저장된 설정을 지우고 다시 입력할 수 있어요
+  // (#reset·#classic·#web 처리는 head의 시작 스크립트에서 해요)
   var DATA = 'ledger-data-cache';
   var DEMO = 'ledger-demo-mode';   // 샘플 데이터 모드(앱 '전체'에서 켬)
-  if (location.hash === '#reset') {
-    try { localStorage.removeItem(STORE); localStorage.removeItem(DATA); } catch (e) {}
-    history.replaceState(null, '', location.pathname);
-  }
 
   var cfg = read();
-  if (cfg && cfg.url && cfg.key) {
+  if (cfg && cfg.url && cfg.key && cfg.mode !== 'classic') {
+    // 새 방식: head에서 앱 화면으로 넘어가는 중이에요 (여기선 아무것도 안 해요)
+  } else if (cfg && cfg.url && cfg.key) {
+    // 예전 방식(#classic): 구글 화면을 iframe으로
     var f = document.getElementById('app');
     f.src = cfg.url + (cfg.url.indexOf('?') < 0 ? '?' : '&') + 'k=' + encodeURIComponent(cfg.key);
     f.hidden = false;
@@ -184,7 +200,8 @@
       var msg = document.getElementById('msg');
       if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { msg.textContent = '웹앱 주소는 https://script.google.com/ 으로 시작하고 /exec 로 끝나야 해요.'; return; }
       if (key.length < 20) { msg.textContent = '비밀키를 다시 확인해 주세요.'; return; }
-      if (!write({ url: url, key: key })) { msg.textContent = '이 브라우저에서는 저장할 수 없어요.'; return; }
+      var old = read();
+      if (!write({ url: url, key: key, mode: old && old.mode })) { msg.textContent = '이 브라우저에서는 저장할 수 없어요.'; return; }
       location.reload();
     });
   }
