@@ -586,12 +586,12 @@ button.jl-add{width:100%;border:0;background:none;font:inherit;font-size:15px;co
   .ios-row.act,.ios-row[data-entry],.ios-row[data-ibrow],.ios-row[data-rule],.ios-row[data-acode],.pbtn,.sbtn{transition:transform .45s var(--spring),background-color .15s}
   .ios-row.act:active,.ios-row[data-entry]:active,.ios-row[data-ibrow]:active,.ios-row[data-rule]:active,.ios-row[data-acode]:active{transform:scale(.975)}
   .pbtn:active,.sbtn:active{transform:scale(.95)}
-  /* 떠 있는 유리 시트 */
+  /* 유리 시트: 좌우·아래는 화면 끝에 붙이고 위 모서리만 둥글게 (아이폰 화면 곡률과 어긋나지 않게) */
   .scrim{background:rgba(17,18,20,.18)}
-  .drawer{left:8px;right:8px;bottom:8px;width:auto;max-height:calc(100% - 52px);border-radius:34px;background:var(--g-sheet);
+  .drawer{left:0;right:0;bottom:0;width:auto;max-height:calc(100% - 44px);border-radius:34px 34px 0 0;background:var(--g-sheet);
     -webkit-backdrop-filter:blur(28px) saturate(190%);backdrop-filter:blur(28px) saturate(190%);
     box-shadow:inset 0 1px 1px var(--g-hi),inset 0 0 0 1px rgba(255,255,255,.5),0 20px 60px rgba(17,18,20,.22);
-    transform:translateY(calc(100% + 16px)) scale(.94);transform-origin:50% 100%;transition:transform .42s cubic-bezier(.4,0,1,1),visibility 0s .42s}
+    transform:translateY(calc(100% + 16px));transition:transform .42s cubic-bezier(.4,0,1,1),visibility 0s .42s}
   .drawer.on{transform:none;transition:transform .7s var(--spring-soft);box-shadow:inset 0 1px 1px var(--g-hi),inset 0 0 0 1px rgba(255,255,255,.5),0 20px 60px rgba(17,18,20,.22)}
   .dr-b{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
   .drawer .ios-list{background:color-mix(in srgb,var(--panel) 85%,transparent)}
@@ -675,7 +675,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16b';
+const APP_VER = '2026.11.16c';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
