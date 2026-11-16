@@ -43,7 +43,7 @@ function getData(key) {
     journalGid: journal.gid,
     accounts: accountsOut_(ss),
     spreadsheetId: SPREADSHEET_ID,
-    inbox: readInbox_(ss),
+    inbox: readInbox_(ss, { journal: journal.rows, rules: readRules_(ss), accounts: accountsOut_(ss) }),
     rules: readRules_(ss),
     at: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'),
   };
@@ -90,23 +90,26 @@ function inboxRow_(r, tz, id) {
   const at = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd HH:mm') : String(r[0] || '');
   return [id, at, String(r[1] || ''), String(r[2] || ''), String(r[3] || ''), String(r[4] || '')];
 }
-/** 두 수신함을 합쳐서. 예전 파일을 못 열어도 장부 화면은 열리게 해요. */
-function readInbox_(ss) {
+/**
+ * 수신함 읽기. 가계부 안 '수신함' 시트가 있으면 그것만 읽어요(예전 수신함 기록은 시트를 만들 때 옮겨 둠 → 파일을 하나만 열어 빨라요).
+ * 아직 없으면(단축어가 구글 폼으로 보내는 동안) 예전 수신함 파일을 읽어요.
+ * 대기(처리상태 빈칸) 알림에는 서버 추천 분개(sug)를 7번째 값으로 붙여요 — 앱의 '전표로 만들기'가 이걸 써요.
+ */
+function readInbox_(ss, ctx) {
   const out = { rows: [] };
-  let err = null;
-  try {
-    const iss = SpreadsheetApp.openById(INBOX_ID);
-    const sh = iss.getSheets()[0];
-    out.id = INBOX_ID; out.gid = sh.getSheetId();
-    out.rows = inboxRows_(sh, iss.getSpreadsheetTimeZone(), 1);
-  } catch (e) { err = String((e && e.message) || e); }
   const lsh = ss.getSheetByName(INBOX_SHEET);
-  if (lsh) {
-    out.id2 = SPREADSHEET_ID; out.gid2 = lsh.getSheetId();
-    out.rows = out.rows.concat(inboxRows_(lsh, ss.getSpreadsheetTimeZone(), -1));
-  }
-  if (err && !lsh) return { error: err };
-  if (err) out.warn = err;
+  try {
+    if (lsh) {
+      out.id = SPREADSHEET_ID; out.gid = lsh.getSheetId(); out.id2 = SPREADSHEET_ID; out.gid2 = lsh.getSheetId();
+      out.rows = inboxRows_(lsh, ss.getSpreadsheetTimeZone(), -1);
+    } else {
+      const iss = SpreadsheetApp.openById(INBOX_ID);
+      const sh = iss.getSheets()[0];
+      out.id = INBOX_ID; out.gid = sh.getSheetId();
+      out.rows = inboxRows_(sh, iss.getSpreadsheetTimeZone(), 1);
+    }
+  } catch (e) { return { error: String((e && e.message) || e) }; }
+  if (ctx) out.rows.forEach((r) => { if (!r[3] && r[2]) { try { r.push(guess_(ss, r[2], ss.getSpreadsheetTimeZone(), ctx)); } catch (e) {} } });
   return out;
 }
 /** 앱의 수신함 행 번호 → {sh, row, id, tz} */
@@ -133,8 +136,24 @@ function inboxSheet_(ss) {
     sh = ss.insertSheet(INBOX_SHEET);
     sh.getRange(1, 1, 1, 5).setValues([['타임스탬프', '알림 원문', '처리상태', '전표번호', '메모']]).setFontWeight('bold');
     sh.setFrozenRows(1);
+    migrateInbox_(ss, sh);
   }
   return sh;
+}
+/** 가계부 안 수신함을 처음 만들 때: 예전 수신함(구글 폼) 기록을 그대로 옮겨요(빈 줄 제외). 예전 파일은 지우지 않고 보관용으로 남겨요. */
+function migrateInbox_(ss, sh) {
+  try {
+    const old = SpreadsheetApp.openById(INBOX_ID).getSheets()[0];
+    const last = old.getLastRow();
+    if (last < 2) return 0;
+    const n = Math.min(5, old.getMaxColumns());
+    const rows = old.getRange(2, 1, last - 1, n).getValues()
+      .filter((r) => String(r[0]).trim() || String(r[1]).trim())
+      .map((r) => r.concat(Array(5 - n).fill('')));
+    if (rows.length) sh.getRange(2, 1, rows.length, 5).setValues(rows);
+    log_(ss, '수신함 옮기기 (예전 폼 수신함 → 가계부 수신함 시트)', '', null, { rows: rows.length });
+    return rows.length;
+  } catch (e) { return 0; }
 }
 
 /* ===================== 분류 규칙 ===================== */
@@ -521,32 +540,84 @@ function ingest_(text) {
   const row = last + 1;
   const put = (st, no, memo) => ish.getRange(row, 1, 1, 5).setValues([[new Date(), text, st, no, memo]]);
   if (dup) { put('중복', '', '같은 알림이 이미 수신함에 있어요'); return { status: '중복', msg: '이미 받은 알림이에요' }; }
-  const g = guess_(ss, text, tz);
-  if (g.why) { put('', '', g.why); return { status: '대기', msg: g.why }; }
+  const sh = ss.getSheetByName('분개장');
+  const g = guess_(ss, text, tz, { journal: journalVals_(sh, tz) });
+  if (g.why || !g.auto) { const why = g.why || g.hint; put('', '', why); return { status: '대기', msg: why }; }
   let v;
   try { v = clean_(ss, g); } catch (err) { put('', '', String(err.message || err)); return { status: '대기', msg: String(err.message || err) }; }
-  const out = writeEntry_(ss.getSheetByName('분개장'), tz, v);
-  put('처리됨', out.no, '자동 분류: ' + g.kw);
+  const out = writeEntry_(sh, tz, v);
+  put('처리됨', out.no, '자동 분류: ' + g.basis);
   log_(ss, '전표 자동 추가 (수신함 시트 ' + row + '행)', out.row, null, Object.assign({ no: out.no }, v));
   return { status: '처리됨', no: out.no, msg: '전표 ' + out.no + '번 · ' + g.memo + ' ' + v.amount.toLocaleString() + '원 (' + v.debit + ' / ' + v.credit + ')' };
 }
-/** 알림 원문 → 전표 추천 (앱의 entryFromInbox와 같은 규칙). 정할 수 없으면 {why} */
-function guess_(ss, text, tz) {
+/** 분개장 A~M 값 (학습 분류용) */
+function journalVals_(sh, tz) {
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  const n = Math.min(COL_GRP, sh.getMaxColumns());
+  return sh.getRange(2, 1, last - 1, n).getValues().map((r) => r.map((v) => cell_(v, tz)));
+}
+
+/* ----- 알림 원문 읽기 ----- */
+/** 가맹점·상대: 신한 '가맹점명:', 현대 체크(금액 줄 다음 줄), 은행 '금액 상대 입출금', 우리 '[출금] 상대 금액' */
+function merchantOf_(text) {
+  const t = String(text || '');
+  let m = /가맹점명\s*[:：]\s*([^\n]+)/.exec(t);
+  if (m) return m[1].trim();
+  m = /[\d,]+원\s*(?:일시불|\d+개월)[^\n]*\n\s*([^\n]+)/.exec(t);
+  if (m) return m[1].trim();
+  m = /[\d,]+원\s+(.+?)\s+입출금/.exec(t);
+  if (m) return m[1].trim();
+  m = /\[(?:출금|입금)\]\s*(.+?)\s+[\d,]+원/.exec(t);
+  if (m) return m[1].trim();
+  return '';
+}
+/** 결제 수단(승인 알림만): 원문 첫 줄. 예) '[신한카드(0534)승인] 이*주', '이동주 님, 현대 체크 승인' */
+function channelOf_(text) {
+  const first = String(text || '').trim().split('\n')[0].trim();
+  return /승인/.test(first) && !/취소/.test(first) ? first : '';
+}
+
+/**
+ * 알림 원문 → 전표 추천. 반환 {date, debit, credit, amount, memo, note, confirm, kw, basis, auto, hint} 또는 {why}
+ * 1) 분류규칙(가장 긴 키워드) 2) 과거 전표 학습: 같은 가맹점의 최근 전표 계정(차변), 같은 결제 수단의 최근 전표 대변
+ * 자동 분개(auto)는 규칙이 맞거나, 승인 알림이면서 같은 가맹점 최근 전표 2건 이상이 같은 차변일 때만. 나머지는 추천만(hint).
+ */
+function guess_(ss, text, tz, ctx) {
+  ctx = ctx || {};
   if (/취소/.test(text)) return { why: '취소 알림이라 직접 확인이 필요해요' };
-  const t = text.toLowerCase();
-  const rule = readRules_(ss).filter((r) => t.indexOf(String(r[0]).trim().toLowerCase()) >= 0)
-    .sort((a, b) => String(b[0]).trim().length - String(a[0]).trim().length)[0];
-  if (!rule) return { why: '맞는 분류 규칙이 없어요' };
   const amt = /([\d,]+)\s*원/.exec(text);
   const amount = amt ? Number(amt[1].replace(/,/g, '')) : 0;
   if (!(amount > 0)) return { why: '금액을 찾지 못했어요' };
-  let credit = String(rule[2] || '').trim();
-  if (!credit && /승인/.test(text)) {
-    const card = accountsOut_(ss).filter((a) => String(a[2]) === '부채' && String(a[1]).indexOf('카드') >= 0 && String(a[6]) !== '사용중지')
+  const t = text.toLowerCase();
+  const rule = (ctx.rules || readRules_(ss)).filter((r) => t.indexOf(String(r[0]).trim().toLowerCase()) >= 0)
+    .sort((a, b) => String(b[0]).trim().length - String(a[0]).trim().length)[0];
+  const merchant = merchantOf_(text), channel = channelOf_(text);
+  // 과거 전표 학습 (최신부터, 무효·여러 줄 전표 제외)
+  const J = (ctx.journal || []).filter((r) => String(r[10]).trim() !== VOID && !String(r[12] || '').trim() && r[2] && r[3]);
+  const hits = [];
+  let chan = null;
+  for (let i = J.length - 1; i >= 0; i--) {
+    const r = J[i], note = String(r[11] || ''), memo = String(r[5] || '');
+    if (merchant.length >= 2 && hits.length < 3 && (note.indexOf(merchant) >= 0 || memo.indexOf(merchant) >= 0)) hits.push(r);
+    if (channel && !chan && note.trim().split('\n')[0].trim() === channel) chan = r;
+    if (hits.length >= 3 && (chan || !channel)) break;
+  }
+  let debit = '', credit = '', basis = '', auto = false;
+  if (rule) { debit = String(rule[1]).trim(); credit = String(rule[2] || '').trim(); basis = '규칙 ' + String(rule[0]).trim(); auto = true; }
+  else if (hits.length) {
+    debit = String(hits[0][2]).trim();
+    const same = hits.filter((r) => String(r[2]).trim() === debit).length;
+    basis = '과거 전표 ' + hits.filter((r) => String(r[2]).trim() === debit).map((r) => r[0]).join('·') + '번(같은 가맹점)';
+    auto = !!channel && same >= 2 && String(hits[0][2]).trim() === debit;
+    if (!channel || !chan) credit = String(hits[0][3]).trim();
+  }
+  if (!credit && chan) credit = String(chan[3]).trim();
+  if (!credit && /승인/.test(text) && !/체크/.test(text)) {   // 대변 없는 신용카드 승인 → 첫 카드 부채 계정 (체크카드는 제외)
+    const card = (ctx.accounts || accountsOut_(ss)).filter((a) => String(a[2]) === '부채' && String(a[1]).indexOf('카드') >= 0 && String(a[6]) !== '사용중지')
       .sort((a, b) => Number(a[0]) - Number(b[0]))[0];
     if (card) credit = String(card[1]).trim();
   }
-  if (!credit) return { why: '대변 계정을 정할 수 없어요 (규칙에 대변 계정 넣기)' };
   const now = new Date();
   let date = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
   const m = /(\d{1,2})[\/.](\d{1,2})\s+\d{1,2}:\d{2}/.exec(text);
@@ -555,10 +626,15 @@ function guess_(ss, text, tz) {
     if (Number(m[1]) > Number(Utilities.formatDate(now, tz, 'M'))) y -= 1;   // 12월 알림을 1월에 받은 경우
     date = y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
   }
-  const shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(text);
-  const kw = String(rule[0]).trim();
-  const memo = String(rule[3] || '').trim() || (shop ? shop[1].trim() : kw);
-  return { date: date, debit: rule[1], credit: credit, amount: amount, memo: memo, note: text, confirm: '미확인', kw: kw };
+  const kw = rule ? String(rule[0]).trim() : merchant;
+  const memo = (rule && String(rule[3] || '').trim()) || merchant || kw;
+  const g = { date: date, debit: debit, credit: credit, amount: amount, memo: memo, note: text, confirm: '미확인', kw: kw, basis: basis };
+  if (!debit && !credit) return Object.assign(g, { why: '맞는 분류 규칙이나 과거 전표가 없어요' });
+  if (!debit) return Object.assign(g, { auto: false, hint: '차변 계정을 정할 수 없어요 (추천 대변: ' + credit + ')' });
+  if (!credit) return Object.assign(g, { auto: false, hint: '대변 계정을 정할 수 없어요 (규칙에 대변 계정 넣기)' });
+  g.auto = auto;
+  if (!auto) g.hint = '추천: ' + debit + ' / ' + credit + ' · ' + basis + (channel ? '' : ' · 체크카드 승인과 같은 거래인지 확인') + ' — 확인 후 전표로 만들어 주세요';
+  return g;
 }
 /** 처음 한 번만 실행: 단축어용 키를 만들어 실행 로그에 보여줘요. 다시 실행하면 바뀌어요(단축어도 바꿔야 함). */
 function makeIngestKey() {

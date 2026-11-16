@@ -421,6 +421,10 @@ select,input[type=search]{border-radius:10px}
 button.jl-add{width:100%;border:0;background:none;font:inherit;font-size:15px;color:var(--accent);font-weight:600;justify-content:center}
 .jl-sum{display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted)}
 .jl-sum b{color:var(--fg);font-variant-numeric:tabular-nums}
+/* 밀어서 확인: 줄 오른쪽 밖에 붙은 버튼이 밀린 만큼 드러나요 */
+.ios-row[data-sw]::after{content:attr(data-sw);position:absolute;top:0;bottom:0;left:100%;width:150px;display:flex;align-items:center;padding-left:20px;background:var(--muted);color:#fff;font-size:15px;font-weight:600;transition:background-color .15s}
+.ios-row.sw-go::after{background:var(--accent)}
+.ios-row.swiping{transition:none!important}
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translate(-50%,16px);z-index:40;max-width:calc(100% - 40px);padding:12px 18px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.bad{background:var(--bad);color:#fff}
@@ -675,7 +679,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16c';
+const APP_VER = '2026.11.16d';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -789,7 +793,7 @@ const IB_LBL = { wait:'처리 대기', hold:'보류', dup:'중복', done:'처리
 const ibTag = (x) => '<span class="ib-st ' + x.kind + '">' + esc(x.status) + '</span>';
 const ibTime = (x) => (/\d{1,2}:\d{2}/.exec(x.at) || [''])[0];
 function ibRow(x) {
-  return '<div class="ios-row" data-ibrow="' + x.row + '"><div class="tx"><div class="t1">' + esc(x.title) + '</div><div class="t2">' + esc([ibTime(x), x.amount != null ? fmt(x.amount) + '원' : '', x.kind === 'hold' && x.memo ? x.memo : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+  return '<div class="ios-row" data-ibrow="' + x.row + '"><div class="tx"><div class="t1">' + esc(x.title) + '</div><div class="t2">' + esc([ibTime(x), x.amount != null ? fmt(x.amount) + '원' : '', (x.kind === 'hold' || x.kind === 'wait') && x.memo ? x.memo : ''].filter(Boolean).join(' · ')) + '</div></div>' +
     '<div class="rt">' + ibTag(x) + (x.nos.length ? '<div class="sm">전표 ' + esc(x.nos.join(', ')) + '</div>' : '') + '</div></div>';
 }
 function ibCounts() {
@@ -826,6 +830,7 @@ function openInbox(row) {
     '<div class="dt-hero"><div class="dt-amt">' + (x.amount != null ? fmt(x.amount) + '<small>원</small>' : '알림') + '</div><div class="dt-t">' + esc(x.title) + '</div><div class="dt-s">' + esc(x.at) + ' 수신 · ' + ibTag(x) + '</div></div>' +
     (x.kind === 'hold' && x.memo ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">보류 사유</b><div style="margin-top:4px">' + esc(x.memo) + '</div></div>' : '') +
     (x.kind === 'wait' || x.kind === 'hold' ? '<div class="acts"><button class="pbtn" data-wr="mkentry" data-ibr="' + x.row + '">전표로 만들기</button></div>' : '') +
+    ((x.kind === 'wait' || x.kind === 'hold') && x.sug && (x.sug.debit || x.sug.credit) ? sec('추천 분개', vrow('차변', esc(x.sug.debit || '-')) + vrow('대변', esc(x.sug.credit || '-')) + (x.sug.basis ? '<div class="ios-row static"><div class="tx"><div class="t2" style="white-space:normal">' + esc(x.sug.basis) + ' · 전표로 만들기에 미리 채워져요</div></div></div>' : '')) : '') +
     sec('알림 원문', '<div class="ios-row static"><div class="ib-raw sel">' + esc(x.text) + '</div></div>') +
     (entries.length ? sec('입력된 전표', entries.map(jrow).join('')) : x.nos.length ? sec('입력된 전표', vrow('전표 번호', esc(x.nos.join(', ')))) : '') +
     (x.kind !== 'hold' && x.memo ? sec('메모', '<div class="ios-row static"><div class="tx"><div class="t1 wrap">' + esc(x.memo) + '</div></div></div>') : '') +
@@ -1108,6 +1113,10 @@ function build(raw) {
     if (rows.some((x) => x.confirm === '미확인')) lead.confirm = lead.void ? lead.confirm : '미확인';
   });
   const list = journal.filter((e) => !e.sub);
+  // 최근 사용 계정: 최근 전표 80건에서 많이 쓴 순서로 6개 (계정 선택 목록 맨 위에 보여줘요)
+  const cnt = new Map();
+  list.filter((e) => !e.void).slice(-80).forEach((e) => e.lines.forEach((l) => cnt.set(l.acct, (cnt.get(l.acct) || 0) + 1)));
+  const recentAccts = [...cnt.entries()].filter(([n]) => byName.has(n) && byName.get(n).active).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n]) => n);
   const valid = journal.filter((e) => e.valid);
   const flows = new Map(accounts.map((a) => [a.name, []]));
   valid.forEach((e) => { flows.get(e.debit).push([e.ym, e.amount, 0]); flows.get(e.credit).push([e.ym, 0, e.amount]); });
@@ -1144,12 +1153,12 @@ function build(raw) {
     inbox = { id:raw.inbox.id, gid:raw.inbox.gid, id2:raw.inbox.id2, gid2:raw.inbox.gid2, items:raw.inbox.rows.filter((r) => txt(r[1]) || txt(r[2])).map((r) => {
       const at = txt(r[1]), st = txt(r[3]), body = txt(r[2]);
       const amt = /([\d,]+)\s*원/.exec(body), shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(body);
-      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]),
+      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]), sug:r[6] && typeof r[6] === 'object' ? r[6] : null,
         amount:amt ? num(amt[1]) : null, title:shop ? shop[1].trim() : ibTitle(body) };
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
   const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]), row:num(r[4]) })).filter((r) => r.kw);
-  return { accounts, byName, journal, list, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
+  return { accounts, byName, journal, list, recentAccts, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
 }
 
 /* 여러 행(쌍)을 차변·대변 줄로: 같은 계정은 합쳐요. 처음 나온 순서 유지 */
@@ -1678,7 +1687,10 @@ async function voidUI(e, on) {
 }
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
 function acctOptions(sel, withCode) {
-  return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
+  const lbl = (a) => (withCode ? a.code + ' ' : '') + esc(a.name);
+  const rec = (S.D.recentAccts || []).map((n) => S.D.byName.get(n)).filter(Boolean);
+  return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' +
+    (rec.length ? '<optgroup label="최근 사용">' + rec.map((a) => '<option value="' + esc(a.name) + '">' + lbl(a) + '</option>').join('') + '</optgroup>' : '') + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
     const as = S.D.accounts.filter((a) => a.type === ty && (a.active || a.name === sel));
     return as.length ? '<optgroup label="' + ty + '">' + as.map((a) => '<option value="' + esc(a.name) + '"' + (a.name === sel ? ' selected' : '') + '>' + (withCode ? a.code + ' ' : '') + esc(a.name) + '</option>').join('') + '</optgroup>' : '';
   }).join('');
@@ -1745,8 +1757,13 @@ function entryFromInbox(ibRow) {
     if (Number(m[1]) > Number(x.dk.slice(4, 6))) y -= 1;   // 12월 알림을 1월에 받은 경우
     date = y + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
   }
-  const card = S.D.accounts.find((a) => a.type === '부채' && a.name.includes('카드'));
   const rule = ruleFor(x.text);
+  const g = x.sug;   // 서버 추천(분류규칙 → 과거 전표 학습). 서버 guess_가 기준이고, 없을 때만 아래 간단 추정
+  if (g && (g.debit || g.credit)) {
+    openForm('new', { ib:{ row:x.row, at:x.at }, kw:g.kw || '', rule, v:{ date:g.date || date, debit:g.debit || '', credit:g.credit || '', amount:g.amount || x.amount || 0, memo:g.memo || x.title, note:x.text, confirm:'확인' } });
+    return;
+  }
+  const card = /체크/.test(x.text) ? null : S.D.accounts.find((a) => a.type === '부채' && a.name.includes('카드'));
   const shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(x.text);
   const kw = rule ? rule.kw : shop ? shop[1].trim() : '';
   const credit = rule && rule.credit ? rule.credit : /승인/.test(x.text) && card ? card.name : '';
@@ -2109,6 +2126,41 @@ $('view').addEventListener('touchend', () => {
   $('ptr').style.opacity = ''; $('ptr').style.transform = '';
   if (fire) load();
 }, { passive:true });
+/* 폰: 전표 줄을 왼쪽으로 밀면 확인 ↔ 미확인 (90px 넘게 밀고 놓으면 실행) */
+let sw = null, swEnd = 0;
+$('view').addEventListener('touchstart', (ev) => {
+  const r = ev.target.closest('.ios-row[data-entry]');
+  sw = null;
+  if (!isM() || !r || S.saving || S.demo) return;
+  const e = leadOf(S.D.journal.find((x) => x.row === Number(r.dataset.entry)));
+  if (!e || e.void) return;
+  sw = { r, e, x:ev.touches[0].clientX, y:ev.touches[0].clientY, dx:0, on:false };
+}, { passive:true });
+$('view').addEventListener('touchmove', (ev) => {
+  if (!sw) return;
+  const dx = ev.touches[0].clientX - sw.x, dy = ev.touches[0].clientY - sw.y;
+  if (!sw.on) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { sw = null; return; }
+    if (dx > -12 || Math.abs(dx) < Math.abs(dy)) return;
+    sw.on = true; pull = null;
+    sw.r.classList.add('swiping');
+    sw.r.dataset.sw = sw.e.confirm === '확인' ? '미확인으로' : '확인';
+  }
+  sw.dx = Math.max(-150, Math.min(0, dx));
+  sw.r.style.transform = 'translateX(' + sw.dx + 'px)';
+  sw.r.classList.toggle('sw-go', sw.dx < -90);
+}, { passive:true });
+$('view').addEventListener('touchend', () => {
+  if (!sw) return;
+  const s0 = sw; sw = null;
+  if (!s0.on) return;
+  swEnd = Date.now();
+  s0.r.classList.remove('swiping', 'sw-go');
+  s0.r.style.transform = '';
+  setTimeout(() => { delete s0.r.dataset.sw; }, 450);
+  if (s0.dx < -90) setConfirmUI([s0.e], s0.e.confirm === '확인' ? '미확인' : '확인');
+}, { passive:true });
+$('view').addEventListener('click', (ev) => { if (Date.now() - swEnd < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);   // 민 뒤 손 뗄 때 상세가 열리지 않게
 /* 폰: 시트를 아래로 끌어 닫기 */
 let drag = null;
 $('drawer').addEventListener('touchstart', (ev) => {
