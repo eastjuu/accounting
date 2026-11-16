@@ -28,7 +28,7 @@ function getData(key) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const tz = ss.getSpreadsheetTimeZone();
-  const conv = (v) => (v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v);
+  const conv = (v) => cell_(v, tz);
   const read = (name, cols) => {
     const sh = ss.getSheetByName(name);
     if (!sh) throw new Error('시트를 찾을 수 없어요: ' + name);
@@ -38,34 +38,101 @@ function getData(key) {
     return { rows: rows, gid: sh.getSheetId() };
   };
   const journal = read('분개장', 12);
-  const accounts = read('계정과목표', COL_ACCT_USE);
   return {
     journal: journal.rows,
     journalGid: journal.gid,
-    accounts: accounts.rows,
+    accounts: accountsOut_(ss),
     spreadsheetId: SPREADSHEET_ID,
-    inbox: readInbox_(),
+    inbox: readInbox_(ss),
     rules: readRules_(ss),
     at: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm'),
   };
 }
 
-/** 수신함 첫 번째 시트의 A~E열(타임스탬프, 알림 원문, 처리상태, 전표번호, 메모). 실패해도 장부 화면은 열리게 오류만 돌려줘요. */
-function readInbox_() {
+/** 계정과목표 A~G (getData와 계정 설정 저장 뒤에 같이 써요) */
+function accountsOut_(ss) {
+  const sh = ss.getSheetByName('계정과목표');
+  const tz = ss.getSpreadsheetTimeZone();
+  const last = sh.getLastRow();
+  const n = Math.min(COL_ACCT_USE, sh.getMaxColumns());
+  return last < 2 ? [] : sh.getRange(2, 1, last - 1, n).getValues().map((r) => r.map((v) => cell_(v, tz)).concat(Array(COL_ACCT_USE - n).fill('')));
+}
+/** 날짜 칸은 yyyy-mm-dd 문자열로 (getData와 바뀐 행 돌려주기에서 같이 써요) */
+function cell_(v, tz) { return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v; }
+/** 분개장의 지정한 행들(A~L)을 getData와 같은 모양으로: [[행, [값…]], …]. 저장 뒤 앱이 전체를 다시 부르지 않고 이 행만 바꿔요. */
+function rowsOut_(sh, tz, rows) {
+  rows = rows.map(Number).filter((r) => r >= 2);
+  if (!rows.length) return [];
+  SpreadsheetApp.flush();   // 방금 쓴 값과 G~J 수식 결과가 반영된 뒤 읽어요
+  const lo = Math.min.apply(null, rows), hi = Math.max.apply(null, rows);
+  const n = Math.min(COL_NOTE, sh.getMaxColumns());
+  const vals = sh.getRange(lo, 1, hi - lo + 1, n).getValues();
+  return rows.map((r) => [r, vals[r - lo].map((v) => cell_(v, tz)).concat(Array(COL_NOTE - n).fill(''))]);
+}
+
+/* ===================== 알림 수신함 ===================== */
+/**
+ * 수신함은 두 곳이에요.
+ *  1) 예전: 구글 폼 응답 파일(INBOX_ID)의 첫 시트. 앱에서의 행 번호 = 양수(시트 행).
+ *  2) 지금: 가계부 파일 안 '수신함' 시트. 단축어가 doPost로 바로 보내요. 앱에서의 행 번호 = 음수(-시트 행).
+ * 열은 둘 다 A 타임스탬프 / B 알림 원문 / C 처리상태 / D 전표번호 / E 메모.
+ */
+const INBOX_SHEET = '수신함';
+function inboxRows_(sh, tz, sign) {
+  const last = sh.getLastRow();
+  const cols = Math.min(5, sh.getMaxColumns());
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, cols).getValues().map((r, i) => inboxRow_(r, tz, sign * (i + 2)));
+}
+function inboxRow_(r, tz, id) {
+  const at = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd HH:mm') : String(r[0] || '');
+  return [id, at, String(r[1] || ''), String(r[2] || ''), String(r[3] || ''), String(r[4] || '')];
+}
+/** 두 수신함을 합쳐서. 예전 파일을 못 열어도 장부 화면은 열리게 해요. */
+function readInbox_(ss) {
+  const out = { rows: [] };
+  let err = null;
   try {
-    const ss = SpreadsheetApp.openById(INBOX_ID);
-    const sh = ss.getSheets()[0];
-    const tz = ss.getSpreadsheetTimeZone();
-    const last = sh.getLastRow();
-    const cols = Math.min(5, sh.getMaxColumns());
-    const rows = last < 2 ? [] : sh.getRange(2, 1, last - 1, cols).getValues().map((r, i) => {
-      const at = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd HH:mm') : String(r[0] || '');
-      return [i + 2, at, String(r[1] || ''), String(r[2] || ''), String(r[3] || ''), String(r[4] || '')];
-    });
-    return { id: INBOX_ID, gid: sh.getSheetId(), rows: rows };
-  } catch (err) {
-    return { error: String((err && err.message) || err) };
+    const iss = SpreadsheetApp.openById(INBOX_ID);
+    const sh = iss.getSheets()[0];
+    out.id = INBOX_ID; out.gid = sh.getSheetId();
+    out.rows = inboxRows_(sh, iss.getSpreadsheetTimeZone(), 1);
+  } catch (e) { err = String((e && e.message) || e); }
+  const lsh = ss.getSheetByName(INBOX_SHEET);
+  if (lsh) {
+    out.id2 = SPREADSHEET_ID; out.gid2 = lsh.getSheetId();
+    out.rows = out.rows.concat(inboxRows_(lsh, ss.getSpreadsheetTimeZone(), -1));
   }
+  if (err && !lsh) return { error: err };
+  if (err) out.warn = err;
+  return out;
+}
+/** 앱의 수신함 행 번호 → {sh, row, id, tz} */
+function inboxRef_(ss, id) {
+  id = Number(id);
+  if (id < 0) {
+    const sh = ss.getSheetByName(INBOX_SHEET);
+    if (!sh || -id > sh.getLastRow()) throw new Error('수신함 행을 찾을 수 없어요. 새로고침해 주세요.');
+    return { sh: sh, row: -id, id: id, tz: ss.getSpreadsheetTimeZone() };
+  }
+  const iss = SpreadsheetApp.openById(INBOX_ID);
+  const sh = iss.getSheets()[0];
+  if (!(id >= 2 && id <= sh.getLastRow())) throw new Error('수신함 행을 찾을 수 없어요. 새로고침해 주세요.');
+  return { sh: sh, row: id, id: id, tz: iss.getSpreadsheetTimeZone() };
+}
+function inboxOut_(ref) {
+  const n = Math.min(5, ref.sh.getMaxColumns());
+  const r = ref.sh.getRange(ref.row, 1, 1, n).getValues()[0];
+  return inboxRow_(r, ref.tz, ref.id);
+}
+function inboxSheet_(ss) {
+  let sh = ss.getSheetByName(INBOX_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(INBOX_SHEET);
+    sh.getRange(1, 1, 1, 5).setValues([['타임스탬프', '알림 원문', '처리상태', '전표번호', '메모']]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
 }
 
 /* ===================== 분류 규칙 ===================== */
@@ -119,13 +186,18 @@ function withLock_(fn) {
   lock.waitLock(20000);
   try { return fn(); } finally { lock.releaseLock(); }
 }
-/** 앱이 알고 있는 행과 지금 시트의 행이 같은 전표인지 확인해요(행이 밀렸으면 거부). */
-function checkRow_(sh, row, no) {
+/** 앱이 알고 있는 행과 지금 시트의 행이 같은 전표인지 확인해요(행이 밀렸으면 거부). 그 행 A~L 표시값을 돌려줘요. */
+function readRow_(sh, row, no) {
   row = Number(row);
   if (!(row >= 2 && row <= sh.getLastRow())) throw new Error('분개장 ' + row + '행을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.');
-  const cur = String(sh.getRange(row, 1).getDisplayValue()).trim();
+  const n = Math.min(COL_NOTE, sh.getMaxColumns());
+  const v = sh.getRange(row, 1, 1, n).getDisplayValues()[0].concat(Array(COL_NOTE - n).fill(''));
+  checkNo_(row, v[0], no);
+  return v;
+}
+function checkNo_(row, cur, no) {
+  cur = String(cur).trim();
   if (cur !== String(no == null ? '' : no).trim()) throw new Error('시트의 ' + row + '행이 바뀌었어요(전표번호 ' + cur + '). 새로고침 후 다시 시도해 주세요.');
-  return row;
 }
 /** 입력값 검사: 날짜 yyyy-mm-dd, 계정과목표에 있는 계정, 0보다 큰 금액. */
 function clean_(ss, f) {
@@ -142,27 +214,39 @@ function clean_(ss, f) {
   // memo = 적요(F열), note = 메모(L열)
   return { date: date, debit: debit, credit: credit, amount: amount, memo: String(f.memo || '').trim(), confirm: confirm, note: String(f.note || '').trim() };
 }
-function log_(ss, action, row, before, after) {
+function log_(ss, action, row, before, after) { logMany_(ss, [[action, row, before, after]]); }
+/** 변경이력 여러 줄을 한 번에 써요. items: [[작업, 행, 변경 전, 변경 후], …] */
+function logMany_(ss, items) {
+  if (!items.length) return;
   let sh = ss.getSheetByName('변경이력');
   if (!sh) { sh = ss.insertSheet('변경이력'); sh.appendRow(['시각', '작업', '분개장 행', '변경 전', '변경 후']); sh.setFrozenRows(1); }
-  sh.appendRow([new Date(), action, row, before ? JSON.stringify(before) : '', after ? JSON.stringify(after) : '']);
+  const now = new Date();
+  const rows = items.map((x) => [now, x[0], x[1], x[2] ? JSON.stringify(x[2]) : '', x[3] ? JSON.stringify(x[3]) : '']);
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 5).setValues(rows);
 }
 
-/** 확인 상태 바꾸기. items: [{row, no}], value: '확인' 또는 '미확인' */
+/** 확인 상태 바꾸기. items: [{row, no}], value: '확인' 또는 '미확인'. 읽기 1번 + 쓰기 1번으로 묶어요. */
 function setConfirm(key, items, value) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   value = value === '확인' ? '확인' : '미확인';
   return withLock_(() => {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sh = ss.getSheetByName('분개장');
-    (items || []).forEach((it) => checkRow_(sh, it.row, it.no));   // 모두 맞을 때만 씀
-    (items || []).forEach((it) => {
-      const cell = sh.getRange(Number(it.row), COL_CONFIRM);
-      const before = cell.getDisplayValue();
-      if (before === VOID) return;   // 무효 전표는 확인 상태를 바꾸지 않아요 (무효 취소 먼저)
-      if (before !== value) { cell.setValue(value); log_(ss, '확인 상태', Number(it.row), before, value); }
-    });
-    return { n: (items || []).length };
+    const seen = {};
+    items = (items || []).map((it) => ({ row: Number(it.row), no: it.no })).filter((it) => !seen[it.row] && (seen[it.row] = true));
+    if (!items.length) return { n: 0, rows: [] };
+    const last = sh.getLastRow();
+    items.forEach((it) => { if (!(it.row >= 2 && it.row <= last)) throw new Error('분개장 ' + it.row + '행을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.'); });
+    const lo = Math.min.apply(null, items.map((it) => it.row)), hi = Math.max.apply(null, items.map((it) => it.row));
+    const block = sh.getRange(lo, 1, hi - lo + 1, COL_CONFIRM).getDisplayValues();
+    items.forEach((it) => checkNo_(it.row, block[it.row - lo][0], it.no));   // 모두 맞을 때만 씀
+    // 무효 전표는 확인 상태를 바꾸지 않아요 (무효 취소 먼저)
+    const todo = items.map((it) => ({ row: it.row, before: block[it.row - lo][COL_CONFIRM - 1] })).filter((t) => t.before !== VOID && t.before !== value);
+    if (todo.length) {
+      sh.getRangeList(todo.map((t) => 'K' + t.row)).setValue(value);
+      logMany_(ss, todo.map((t) => ['확인 상태', t.row, t.before, value]));
+    }
+    return { n: items.length, rows: rowsOut_(sh, ss.getSpreadsheetTimeZone(), items.map((it) => it.row)) };
   });
 }
 
@@ -172,16 +256,15 @@ function updateEntry(key, row, no, f) {
   return withLock_(() => {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sh = ss.getSheetByName('분개장');
-    row = checkRow_(sh, row, no);
-    if (String(sh.getRange(row, COL_CONFIRM).getDisplayValue()).trim() === VOID) throw new Error('무효 처리된 전표예요. 무효 취소 후 수정해 주세요.');
-    const v = clean_(ss, f);
     header_(sh, COL_NOTE, '메모');
-    const before = sh.getRange(row, 1, 1, COL_NOTE).getDisplayValues()[0];
+    const before = readRow_(sh, row, no);
+    row = Number(row);
+    if (String(before[COL_CONFIRM - 1]).trim() === VOID) throw new Error('무효 처리된 전표예요. 무효 취소 후 수정해 주세요.');
+    const v = clean_(ss, f);
     sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
-    sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
-    sh.getRange(row, COL_NOTE).setValue(v.note);
+    sh.getRange(row, COL_CONFIRM, 1, 2).setValues([[v.confirm, v.note]]);   // K·L (G~J 수식은 건드리지 않아요)
     log_(ss, '전표 수정', row, before, v);
-    return { row: row };
+    return { row: row, rows: rowsOut_(sh, ss.getSpreadsheetTimeZone(), [row]) };
   });
 }
 
@@ -191,71 +274,78 @@ function voidEntry(key, row, no, on) {
   return withLock_(() => {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sh = ss.getSheetByName('분개장');
-    row = checkRow_(sh, row, no);
-    const cell = sh.getRange(row, COL_CONFIRM);
-    const before = String(cell.getDisplayValue()).trim();
+    const before = String(readRow_(sh, row, no)[COL_CONFIRM - 1]).trim();
+    row = Number(row);
     const after = on ? VOID : '미확인';
-    if (on && before === VOID) return { row: row };
-    if (!on && before !== VOID) return { row: row };
-    cell.setValue(after);
-    log_(ss, on ? '전표 무효' : '무효 취소', row, before, after);
-    return { row: row };
+    if ((on && before !== VOID) || (!on && before === VOID)) {
+      sh.getRange(row, COL_CONFIRM).setValue(after);
+      log_(ss, on ? '전표 무효' : '무효 취소', row, before, after);
+    }
+    return { row: row, rows: rowsOut_(sh, ss.getSpreadsheetTimeZone(), [row]) };
   });
 }
 
-/** 새 전표 추가. ib가 있으면 수신함의 그 알림을 '처리됨'으로 표시해요. ib: {row, at} */
+/** 새 전표 추가. ib가 있으면 수신함의 그 알림을 '처리됨'으로 표시해요. ib: {row(음수면 가계부 안 수신함), at} */
 function addEntry(key, f, ib) {
   if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
   return withLock_(() => {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const tz = ss.getSpreadsheetTimeZone();
     const sh = ss.getSheetByName('분개장');
     const v = clean_(ss, f);
-    let ish = null, irow = 0;
+    let ref = null, ibMemo = '';
     if (ib && ib.row) {
-      ish = SpreadsheetApp.openById(INBOX_ID).getSheets()[0];
-      irow = Number(ib.row);
-      if (String(ish.getRange(irow, 3).getDisplayValue()).trim() === '처리됨') throw new Error('이미 처리된 알림이에요. 새로고침해 주세요.');
+      ref = inboxRef_(ss, ib.row);
+      const st = ref.sh.getRange(ref.row, 3, 1, 3).getDisplayValues()[0];
+      if (String(st[0]).trim() === '처리됨') throw new Error('이미 처리된 알림이에요. 새로고침해 주세요.');
+      ibMemo = String(st[2]).trim();
     }
-    // 마지막 데이터 행(B~F 중 하나라도 값이 있는 행)과 다음 전표번호. A열은 자동번호 수식이라 판단에서 빼요
-    const last = Math.max(1, sh.getLastRow());
-    const vals = last < 2 ? [] : sh.getRange(2, 1, last - 1, 6).getValues();
-    let lastData = 1, maxNo = 0;
-    vals.forEach((r, i) => {
-      if (r.slice(1).some((x) => x !== '' && x !== null)) lastData = i + 2;
-      const n = Number(r[0]); if (n > maxNo) maxNo = n;
-    });
-    let no = maxNo + 1;
-    const row = lastData + 1;
-    // 쓰기 전에 그 행이 정말 비어 있는지 한 번 더 확인 (다른 전표를 덮어쓰지 않게)
-    if (sh.getRange(row, 2, 1, 5).getValues()[0].some((x) => x !== '' && x !== null)) throw new Error('분개장 ' + row + '행이 비어 있지 않아요. 새로고침 후 다시 시도해 주세요.');
-    if (sh.getRange(row, 1).getFormula()) {
-      // A열 자동번호 수식은 그대로 두고 B~F만 써요
-      sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
-    } else {
-      sh.getRange(row, 1, 1, 6).setValues([[no, v.date, v.debit, v.credit, v.amount, v.memo]]);
-    }
-    sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
-    if (v.note) { header_(sh, COL_NOTE, '메모'); sh.getRange(row, COL_NOTE).setValue(v.note); }
-    SpreadsheetApp.flush();
-    no = Number(sh.getRange(row, 1).getDisplayValue()) || no;
-    // G~J열: 바로 위 행이 수식이면 같은 수식을 이어 붙여요(이미 값·수식이 있으면 그대로)
-    if (lastData >= 2) {
-      const src = sh.getRange(lastData, 7, 1, 4).getFormulasR1C1()[0];
-      const tgt = sh.getRange(row, 7, 1, 4);
-      const tf = tgt.getFormulasR1C1()[0], tv = tgt.getValues()[0];
-      src.forEach((fm, j) => { if (fm && !tf[j] && tv[j] === '') sh.getRange(row, 7 + j).setFormulaR1C1(fm); });
-    }
-    if (ish) {
-      const memo = String(ish.getRange(irow, 5).getDisplayValue()).trim();
-      ish.getRange(irow, 3, 1, 3).setValues([['처리됨', no, (memo ? memo + ' / ' : '') + '앱에서 직접 입력']]);
-    }
+    const out = writeEntry_(sh, tz, v);
+    if (ref) ref.sh.getRange(ref.row, 3, 1, 3).setValues([['처리됨', out.no, (ibMemo ? ibMemo + ' / ' : '') + '앱에서 직접 입력']]);
+    const logs = [];
     if (f.rule && String(f.rule.keyword || '').trim()) {
       upsertRule_(ss, f.rule.keyword, v.debit, v.credit, f.rule.desc);
-      log_(ss, '분류 규칙', '', null, { keyword: String(f.rule.keyword).trim(), debit: v.debit, credit: v.credit, desc: String(f.rule.desc || '').trim() });
+      logs.push(['분류 규칙', '', null, { keyword: String(f.rule.keyword).trim(), debit: v.debit, credit: v.credit, desc: String(f.rule.desc || '').trim() }]);
     }
-    log_(ss, '전표 추가' + (ish ? ' (수신함 ' + irow + '행)' : ''), row, null, Object.assign({ no: no }, v));
-    return { row: row, no: no };
+    logs.push(['전표 추가' + (ref ? ' (수신함 ' + (ref.id < 0 ? '시트 ' : '') + ref.row + '행)' : ''), out.row, null, Object.assign({ no: out.no }, v)]);
+    logMany_(ss, logs);
+    return {
+      row: out.row, no: out.no, rows: out.rows,
+      inbox: ref ? [inboxOut_(ref)] : undefined,
+      rules: f.rule ? readRules_(ss) : undefined,
+    };
   });
+}
+
+/**
+ * 분개장 마지막 데이터 행(B~F 기준) 아래에 전표를 써요. 잠금 안에서만 불러요.
+ * A열 자동번호·G~J 수식은 그대로 두고 B~F, K, L만 써요. 돌려주는 값: {row, no, rows}
+ */
+function writeEntry_(sh, tz, v) {
+  const last = Math.max(1, sh.getLastRow());
+  const vals = last < 2 ? [] : sh.getRange(2, 1, last - 1, 6).getValues();
+  let lastData = 1, maxNo = 0;
+  vals.forEach((r, i) => {
+    if (r.slice(1).some((x) => x !== '' && x !== null)) lastData = i + 2;
+    const n = Number(r[0]); if (n > maxNo) maxNo = n;
+  });
+  const row = lastData + 1;
+  // 쓰기 전에 그 행이 정말 비어 있는지 (위에서 읽은 값으로 확인: lastData 아래는 B~F가 비어 있어요)
+  if (row - 2 < vals.length && vals[row - 2].slice(1).some((x) => x !== '' && x !== null)) throw new Error('분개장 ' + row + '행이 비어 있지 않아요. 새로고침 후 다시 시도해 주세요.');
+  const fm = sh.getRange(row, 1, 1, 10).getFormulasR1C1()[0];   // A, G~J 수식 여부
+  if (fm[0]) sh.getRange(row, 2, 1, 5).setValues([[v.date, v.debit, v.credit, v.amount, v.memo]]);
+  else sh.getRange(row, 1, 1, 6).setValues([[maxNo + 1, v.date, v.debit, v.credit, v.amount, v.memo]]);
+  if (v.note) { header_(sh, COL_NOTE, '메모'); sh.getRange(row, COL_CONFIRM, 1, 2).setValues([[v.confirm, v.note]]); }
+  else sh.getRange(row, COL_CONFIRM).setValue(v.confirm);
+  // G~J열: 바로 위 행이 수식인데 이 행에 없으면 같은 수식을 이어 붙여요 (보통은 미리 채워져 있어 건너뜀)
+  if (lastData >= 2 && fm.slice(6, 10).some((x) => !x)) {
+    const src = sh.getRange(lastData, 7, 1, 4).getFormulasR1C1()[0];
+    const tv = sh.getRange(row, 7, 1, 4).getValues()[0];
+    src.forEach((f, j) => { if (f && !fm[6 + j] && tv[j] === '') sh.getRange(row, 7 + j).setFormulaR1C1(f); });
+  }
+  const rows = rowsOut_(sh, tz, [row]);
+  const no = Number(rows[0][1][0]) || maxNo + 1;
+  return { row: row, no: no, rows: rows };
 }
 
 function checkKey_(key) {
@@ -271,6 +361,86 @@ function makeKey() {
   const key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
   PropertiesService.getScriptProperties().setProperty('APP_KEY', key);
   Logger.log('비밀키: ' + key);
+}
+
+/* ===================== 단축어 → 바로 입력 (doPost) ===================== */
+/**
+ * 아이폰 단축어가 알림 한 건을 웹앱 주소로 POST 해요. 본문(JSON): {"k": 단축어 키, "text": 알림 원문}
+ *  1) 가계부 안 '수신함' 시트에 한 줄 기록 (같은 원문이 최근에 있으면 '중복')
+ *  2) 분류규칙(가장 긴 키워드)에 맞고 금액·계정이 다 정해지면 바로 '미확인' 전표를 만들고 '처리됨'
+ *  3) 아니면 처리상태를 비워 두고(대기) 메모에 이유 → 앱이나 밤 정리 때 처리
+ * 키는 앱 접속 키(APP_KEY)와 따로예요: 단축어에 들어가는 키로는 장부를 볼 수 없어요. 처음 한 번 makeIngestKey() 실행.
+ */
+function doPost(e) {
+  const json = (o) => ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+  let body = {};
+  try { body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {}; } catch (err) { body = {}; }
+  const p = Object.assign({}, (e && e.parameter) || {}, body);
+  const saved = PropertiesService.getScriptProperties().getProperty('INGEST_KEY');
+  if (!saved || String(p.k || '') !== saved) return json({ ok: false, msg: '키가 맞지 않아요' });
+  const text = String(p.text || '').trim();
+  if (!text) return json({ ok: false, msg: '알림 내용이 비어 있어요' });
+  if (text.length > 3000) return json({ ok: false, msg: '알림이 너무 길어요' });
+  try {
+    return json(Object.assign({ ok: true }, withLock_(() => ingest_(text))));
+  } catch (err) {
+    return json({ ok: false, msg: String((err && err.message) || err) });
+  }
+}
+function ingest_(text) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const tz = ss.getSpreadsheetTimeZone();
+  const ish = inboxSheet_(ss);
+  const last = ish.getLastRow();
+  const from = Math.max(2, last - 299);   // 최근 300건 안에서 같은 원문 찾기 (단축어 재전송 대비)
+  const dup = last >= 2 && ish.getRange(from, 2, last - from + 1, 1).getDisplayValues().some((r) => String(r[0]).trim() === text);
+  const row = last + 1;
+  const put = (st, no, memo) => ish.getRange(row, 1, 1, 5).setValues([[new Date(), text, st, no, memo]]);
+  if (dup) { put('중복', '', '같은 알림이 이미 수신함에 있어요'); return { status: '중복', msg: '이미 받은 알림이에요' }; }
+  const g = guess_(ss, text, tz);
+  if (g.why) { put('', '', g.why); return { status: '대기', msg: g.why }; }
+  let v;
+  try { v = clean_(ss, g); } catch (err) { put('', '', String(err.message || err)); return { status: '대기', msg: String(err.message || err) }; }
+  const out = writeEntry_(ss.getSheetByName('분개장'), tz, v);
+  put('처리됨', out.no, '자동 분류: ' + g.kw);
+  log_(ss, '전표 자동 추가 (수신함 시트 ' + row + '행)', out.row, null, Object.assign({ no: out.no }, v));
+  return { status: '처리됨', no: out.no, msg: '전표 ' + out.no + '번 · ' + g.memo + ' ' + v.amount.toLocaleString() + '원 (' + v.debit + ' / ' + v.credit + ')' };
+}
+/** 알림 원문 → 전표 추천 (앱의 entryFromInbox와 같은 규칙). 정할 수 없으면 {why} */
+function guess_(ss, text, tz) {
+  if (/취소/.test(text)) return { why: '취소 알림이라 직접 확인이 필요해요' };
+  const t = text.toLowerCase();
+  const rule = readRules_(ss).filter((r) => t.indexOf(String(r[0]).trim().toLowerCase()) >= 0)
+    .sort((a, b) => String(b[0]).trim().length - String(a[0]).trim().length)[0];
+  if (!rule) return { why: '맞는 분류 규칙이 없어요' };
+  const amt = /([\d,]+)\s*원/.exec(text);
+  const amount = amt ? Number(amt[1].replace(/,/g, '')) : 0;
+  if (!(amount > 0)) return { why: '금액을 찾지 못했어요' };
+  let credit = String(rule[2] || '').trim();
+  if (!credit && /승인/.test(text)) {
+    const card = accountsOut_(ss).filter((a) => String(a[2]) === '부채' && String(a[1]).indexOf('카드') >= 0 && String(a[6]) !== '사용중지')
+      .sort((a, b) => Number(a[0]) - Number(b[0]))[0];
+    if (card) credit = String(card[1]).trim();
+  }
+  if (!credit) return { why: '대변 계정을 정할 수 없어요 (규칙에 대변 계정 넣기)' };
+  const now = new Date();
+  let date = Utilities.formatDate(now, tz, 'yyyy-MM-dd');
+  const m = /(\d{1,2})[\/.](\d{1,2})\s+\d{1,2}:\d{2}/.exec(text);
+  if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12 && Number(m[2]) >= 1 && Number(m[2]) <= 31) {
+    let y = Number(Utilities.formatDate(now, tz, 'yyyy'));
+    if (Number(m[1]) > Number(Utilities.formatDate(now, tz, 'M'))) y -= 1;   // 12월 알림을 1월에 받은 경우
+    date = y + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+  }
+  const shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(text);
+  const kw = String(rule[0]).trim();
+  const memo = String(rule[3] || '').trim() || (shop ? shop[1].trim() : kw);
+  return { date: date, debit: rule[1], credit: credit, amount: amount, memo: memo, note: text, confirm: '미확인', kw: kw };
+}
+/** 처음 한 번만 실행: 단축어용 키를 만들어 실행 로그에 보여줘요. 다시 실행하면 바뀌어요(단축어도 바꿔야 함). */
+function makeIngestKey() {
+  const key = Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('INGEST_KEY', key);
+  Logger.log('단축어 키: ' + key);
 }
 
 /* ===================== 1회용: 적요의 "(알림: …)"을 메모(L열)로 옮기기 ===================== */
@@ -339,7 +509,7 @@ function saveRule(key, r) {
       sh.appendRow([kw, debit, credit, '설정에서 추가', today, desc]);
       log_(ss, '분류 규칙 추가', '', null, { keyword: kw, debit: debit, credit: credit, desc: desc });
     }
-    return { ok: true };
+    return { ok: true, rules: readRules_(ss) };
   });
 }
 /** 규칙 삭제. 행의 키워드가 kw와 같을 때만 지워요(행이 밀렸으면 거부). */
@@ -352,7 +522,7 @@ function deleteRule(key, row, kw) {
     const before = sh.getRange(row, 1, 1, 6).getDisplayValues()[0];
     sh.deleteRow(row);
     log_(ss, '분류 규칙 삭제', '', before, null);
-    return { ok: true };
+    return { ok: true, rules: readRules_(ss) };
   });
 }
 function ruleRow_(sh, row, kw) {
@@ -399,7 +569,7 @@ function addAccount(key, a) {
     const side = (type === '자산' || type === '비용') ? '차변' : '대변';
     sh.getRange(row, 1, 1, 5).setValues([[code, name, type, side, fsg]]);
     log_(ss, '계정 추가', '', null, { row: row, code: code, name: name, type: type, side: side, fsg: fsg });
-    return { row: row, count: row - 1 };
+    return { row: row, count: row - 1, accounts: accountsOut_(ss) };
   });
 }
 /** 사용중지(on=false) / 다시 사용(on=true). G열만 바꿔요. */
@@ -418,7 +588,7 @@ function setAccountUse(key, code, name, on) {
     const after = on ? '' : '사용중지';
     cell.setValue(after);
     log_(ss, on ? '계정 다시 사용' : '계정 사용중지', '', { code: code, name: name, use: before }, { use: after });
-    return { ok: true };
+    return { ok: true, accounts: accountsOut_(ss) };
   });
 }
 /** col열 기준 마지막으로 값이 있는 행 (수식 등으로 getLastRow가 부풀어도 안전하게). */

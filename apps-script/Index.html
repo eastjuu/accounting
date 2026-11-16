@@ -656,7 +656,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.12';
+const APP_VER = '2026.11.16';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -801,7 +801,8 @@ function openInbox(row) {
   if (!x) return;
   $('drTitle').textContent = '알림';
   const entries = x.nos.map((no) => S.D.journal.find((e) => e.no === no)).filter(Boolean);
-  const url = 'https://docs.google.com/spreadsheets/d/' + S.D.inbox.id + '/edit#gid=' + S.D.inbox.gid + '&range=A' + x.row + ':E' + x.row;
+  const ib = S.D.inbox, r = Math.abs(x.row);   // 음수 행 = 가계부 안 '수신함' 시트(단축어가 바로 보낸 알림)
+  const url = 'https://docs.google.com/spreadsheets/d/' + (x.row < 0 ? ib.id2 : ib.id) + '/edit#gid=' + (x.row < 0 ? ib.gid2 : ib.gid) + '&range=A' + r + ':E' + r;
   $('drBody').innerHTML =
     '<div class="dt-hero"><div class="dt-amt">' + (x.amount != null ? fmt(x.amount) + '<small>원</small>' : '알림') + '</div><div class="dt-t">' + esc(x.title) + '</div><div class="dt-s">' + esc(x.at) + ' 수신 · ' + ibTag(x) + '</div></div>' +
     (x.kind === 'hold' && x.memo ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">보류 사유</b><div style="margin-top:4px">' + esc(x.memo) + '</div></div>' : '') +
@@ -1096,7 +1097,7 @@ function build(raw) {
   if (raw.inbox && raw.inbox.error) inboxErr = raw.inbox.error;
   else if (raw.inbox && Array.isArray(raw.inbox.rows)) {
     const kindOf = (st) => (!st ? 'wait' : st === '처리됨' ? 'done' : st === '중복' ? 'dup' : 'hold');
-    inbox = { id:raw.inbox.id, gid:raw.inbox.gid, items:raw.inbox.rows.filter((r) => txt(r[1]) || txt(r[2])).map((r) => {
+    inbox = { id:raw.inbox.id, gid:raw.inbox.gid, id2:raw.inbox.id2, gid2:raw.inbox.gid2, items:raw.inbox.rows.filter((r) => txt(r[1]) || txt(r[2])).map((r) => {
       const at = txt(r[1]), st = txt(r[3]), body = txt(r[2]);
       const amt = /([\d,]+)\s*원/.exec(body), shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(body);
       return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]),
@@ -1508,6 +1509,29 @@ function api(fn, ...args) {
     .withSuccessHandler(res)
     .withFailureHandler((err) => rej(err && err.message ? err : new Error(String(err))))[fn](key, ...args)));
 }
+/* 저장 뒤: 서버가 돌려준 바뀐 부분(행·수신함·규칙·계정)만 반영해요. 전체 다시 불러오기를 생략해서 바로 보여요.
+   서버가 바뀐 부분을 안 주면(예전 서버) 전체를 다시 불러와요. */
+function applyPatch(p) {
+  const raw = S.realRaw;
+  if (!p || !raw || !(p.rows || p.inbox || p.rules || p.accounts)) { load(); return; }
+  try {
+    (p.rows || []).forEach(([row, vals]) => {
+      while (raw.journal.length < row - 1) raw.journal.push([]);
+      raw.journal[row - 2] = vals;
+    });
+    if (p.inbox && raw.inbox && Array.isArray(raw.inbox.rows)) p.inbox.forEach((r) => {
+      const i = raw.inbox.rows.findIndex((x) => x[0] === r[0]);
+      if (i >= 0) raw.inbox.rows[i] = r; else raw.inbox.rows.push(r);
+    });
+    if (p.rules) raw.rules = p.rules;
+    if (p.accounts) raw.accounts = p.accounts;
+    S.wv = (S.wv || 0) + 1;   // 진행 중이던 불러오기 결과(저장 전 데이터)는 버리게
+    S.D = build(raw);
+    cacheWrite(raw);
+    toShell({ type:'ledger-save', raw });
+  } catch (err) { load(); return; }
+  if (S.sel) { const r = S.sel; render(); openEntry(r); } else render();
+}
 function toast(msg, bad) {
   const t = $('toast');
   t.textContent = msg;
@@ -1541,10 +1565,10 @@ async function setConfirmUI(entries, value) {
   entries.forEach((e) => { e.confirm = value; });
   render(); if (S.sel) openEntry(S.sel);
   try {
-    await api('setConfirm', entries.map((e) => ({ row:e.row, no:e.no })), value);
+    const r = await api('setConfirm', entries.map((e) => ({ row:e.row, no:e.no })), value);
     toast(value === '확인' ? entries.length + '건을 확인했어요' : '미확인으로 되돌렸어요');
     S.saving = false;
-    load();
+    applyPatch(r);
   } catch (err) {
     entries.forEach((e, i) => { e.confirm = prev[i]; });
     S.saving = false;
@@ -1559,10 +1583,10 @@ async function voidUI(e, on) {
   e.confirm = on ? '무효' : '미확인'; e.void = on;
   render(); openEntry(e.row);
   try {
-    await api('voidEntry', e.row, e.no, on);
+    const r = await api('voidEntry', e.row, e.no, on);
     toast(on ? '전표 ' + e.no + '번을 무효 처리했어요' : '무효를 취소했어요 · 미확인 상태예요');
     S.saving = false;
-    load();
+    applyPatch(r);
   } catch (err) {
     e.confirm = prev; e.void = prev === '무효';
     S.saving = false;
@@ -1593,7 +1617,7 @@ function openForm(mode, ctx) {
       fm('상태', '<select name="confirm"><option value="미확인"' + (v.confirm === '확인' ? '' : ' selected') + '>미확인</option><option value="확인"' + (v.confirm === '확인' ? ' selected' : '') + '>확인</option></select>')) +
     (ctx.ib ? sec('분류 규칙', '<label class="ios-row fm"><span class="lab">키워드</span><input type="text" name="kw" value="' + esc(ctx.kw || '') + '" placeholder="알림에 들어 있는 글자"></label>' +
       '<label class="ios-row fm"><span class="lab" style="width:72px">기본 적요</span><input type="text" name="rdesc" value="' + esc(ctx.rule ? ctx.rule.desc || '' : v.memo || '') + '" placeholder="이 키워드면 들어갈 적요"></label>' +
-      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정·적요로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '알림에 키워드가 있으면 밤 정리 때 적용돼요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') : '') +
+      '<label class="ios-row"><div class="tx"><div class="t1">다음에도 이 계정·적요로 분류</div><div class="t2" style="white-space:normal">' + (ctx.rule ? '이미 있는 규칙(' + esc(ctx.rule.kw) + ')으로 채웠어요 · 체크하면 덮어써요' : '다음 알림부터 키워드가 있으면 바로 전표로 만들어져요') + '</div></div><input type="checkbox" class="sw" name="rule"' + (ctx.rule || !ctx.kw ? '' : ' checked') + ' aria-label="분류 규칙 저장"></label>') : '') +
     '<div class="acts"><button type="submit" class="pbtn ink" id="efSave">저장</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
     '<p class="fm-note">' + (mode === 'edit' ? '저장하면 구글 시트 분개장 ' + ctx.row + '행이 바뀌어요' : ctx.ib ? '저장하면 분개장 맨 아래에 새 전표가 추가되고, 수신함 알림은 처리됨으로 바뀌어요' : '저장하면 분개장 맨 아래에 새 전표가 추가돼요') + '</p></form>';
   $('drBody').scrollTop = 0;
@@ -1635,17 +1659,18 @@ async function submitForm(f) {
   S.saving = true;
   $('efSave').disabled = true; $('efSave').textContent = '저장 중…';
   try {
+    let r;
     if (F.mode === 'edit') {
-      await api('updateEntry', F.row, F.no, v);
+      r = await api('updateEntry', F.row, F.no, v);
       toast('전표 ' + F.no + '번을 수정했어요');
-      S.sel = F.row;            // 새로 불러온 뒤 이 전표를 다시 보여줘요
+      S.sel = F.row;            // 반영한 뒤 이 전표를 다시 보여줘요
     } else {
-      const r = await api('addEntry', v, F.ib);
+      r = await api('addEntry', v, F.ib);
       toast('전표 ' + r.no + '번을 만들었어요' + (v.rule ? ' · 규칙 저장' : ''));
       closeEntry();
     }
     S.saving = false;
-    load();
+    applyPatch(r);
   } catch (err) {
     S.saving = false;
     $('efSave').disabled = false; $('efSave').textContent = '저장';
@@ -1808,7 +1833,7 @@ document.addEventListener('submit', async (ev) => {
   if (S.saving) return;
   const F = S.form;
   const btn = $(f.id === 'rf' ? 'rfSave' : 'afSave'), lbl = btn.textContent;
-  let sent = false;
+  let sent = false, res = null;
   try {
     if (f.id === 'rf') {
       const r = { row:F.row, kw:F.kw, keyword:f.kw.value.trim(), debit:f.debit.value, credit:f.credit.value, desc:f.desc.value.trim() };
@@ -1816,7 +1841,7 @@ document.addEventListener('submit', async (ev) => {
       if (!r.debit) throw new Error('차변 계정을 골라 주세요');
       if (r.debit === r.credit) throw new Error('차변과 대변이 같은 계정이에요');
       setSaving(btn, true, '저장 중…'); sent = true;
-      await api('saveRule', r);
+      res = await api('saveRule', r);
       toast(F.row ? '규칙을 수정했어요' : '규칙을 추가했어요');
     } else {
       const a = { type:f.atype.value, code:num(f.code.value), name:f.name.value.trim(), fsg:f.fsg.value };
@@ -1824,11 +1849,11 @@ document.addEventListener('submit', async (ev) => {
       if (S.D.accounts.some((x) => x.name === a.name)) throw new Error('이미 있는 계정 이름이에요');
       if (S.D.accounts.some((x) => x.code === a.code)) throw new Error('이미 있는 계정 코드예요');
       setSaving(btn, true, '추가 중…'); sent = true;
-      const res = await api('addAccount', a);
+      res = await api('addAccount', a);
       toast(a.name + ' 계정을 추가했어요' + (res && res.count >= 40 ? ' · 시산표 40개 한도를 확인하세요' : ''));
     }
     setSaving(btn, false, lbl);
-    closeEntry(); load();
+    closeEntry(); applyPatch(res);
   } catch (err) {
     setSaving(btn, false, lbl);
     toast((sent ? '저장하지 못했어요 · ' : '') + err.message, true);
@@ -1843,9 +1868,10 @@ async function settingWrite(w) {
   }
   S.saving = true;
   try {
-    if (w === 'rule-del') { await api('deleteRule', F.row, F.kw); toast('규칙을 삭제했어요'); }
-    else { await api('setAccountUse', F.code, F.name, w === 'acct-on'); toast(F.name + (w === 'acct-on' ? ' 계정을 다시 사용해요' : ' 계정을 사용중지했어요')); }
-    S.saving = false; closeEntry(); load();
+    let r;
+    if (w === 'rule-del') { r = await api('deleteRule', F.row, F.kw); toast('규칙을 삭제했어요'); }
+    else { r = await api('setAccountUse', F.code, F.name, w === 'acct-on'); toast(F.name + (w === 'acct-on' ? ' 계정을 다시 사용해요' : ' 계정을 사용중지했어요')); }
+    S.saving = false; closeEntry(); applyPatch(r);
   } catch (err) { S.saving = false; toast('저장하지 못했어요 · ' + err.message, true); }
 }
 
@@ -1972,12 +1998,14 @@ function load() {
   if (S.demo) { toast('샘플 데이터예요 · 끄려면 전체 → 샘플 데이터로 보기'); render(); return; }
   if (S.loading) return;
   S.loading = true;
+  const wv = S.wv || 0;
   $('refresh').classList.add('spin');
   if (S.D) $('ptr').classList.add('spin');
   document.querySelectorAll('.sq.rf').forEach((el) => el.classList.add('spin'));   // 처음(틀만 보일 때)은 틀 자체가 로딩 표시
   document.querySelectorAll('.lt-sub').forEach((el) => { if (S.D) el.textContent = '새로 불러오는 중…'; });
   withKey((key) => google.script.run
     .withSuccessHandler((raw) => {
+      if ((S.wv || 0) !== wv) { S.loading = false; load(); return; }   // 불러오는 사이에 저장됨 → 옛 데이터라 다시 불러와요
       S.loading = false; S.error = null; S.note = null;
       $('refresh').classList.remove('spin');
       $('ptr').classList.remove('spin');
