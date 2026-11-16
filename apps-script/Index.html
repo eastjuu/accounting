@@ -3,7 +3,28 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="가계부">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f3f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171d" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="../icon.png?v=2">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
 <title>가계부</title>
+<script>
+/* 실행 방식: Apps Script 안(google.script.run) 또는 GitHub Pages에서 직접(WEB, fetch로 데이터 API 호출).
+   WEB인데 연결 설정이 없으면 첫 화면(설정)으로 보내요. */
+var WEB = !(window.google && google.script && google.script.run);
+var CFG = null;
+if (WEB) {
+  try { CFG = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); } catch (e) {}
+  if (!(CFG && CFG.url && CFG.key) && location.protocol === 'https:') location.replace('../index.html');
+  document.documentElement.classList.add('web');
+}
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
 :root{
@@ -25,6 +46,7 @@
 }}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;-webkit-text-size-adjust:100%}
+html.web body{box-sizing:border-box;padding-top:env(safe-area-inset-top)}
 button,select,input{font:inherit;color:inherit}
 .app{display:grid;grid-template-columns:220px 1fr;height:100%}
 
@@ -421,6 +443,10 @@ select,input[type=search]{border-radius:10px}
 button.jl-add{width:100%;border:0;background:none;font:inherit;font-size:15px;color:var(--accent);font-weight:600;justify-content:center}
 .jl-sum{display:flex;justify-content:space-between;gap:8px;padding:12px 16px;border-top:1px solid var(--line);font-size:13.5px;color:var(--muted)}
 .jl-sum b{color:var(--fg);font-variant-numeric:tabular-nums}
+/* 밀어서 확인: 줄 오른쪽 밖에 붙은 버튼이 밀린 만큼 드러나요 */
+.ios-row[data-sw]::after{content:attr(data-sw);position:absolute;top:0;bottom:0;left:100%;width:150px;display:flex;align-items:center;padding-left:20px;background:var(--muted);color:#fff;font-size:15px;font-weight:600;transition:background-color .15s}
+.ios-row.sw-go::after{background:var(--accent)}
+.ios-row.swiping{transition:none!important}
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translate(-50%,16px);z-index:40;max-width:calc(100% - 40px);padding:12px 18px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.bad{background:var(--bad);color:#fff}
@@ -675,7 +701,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16c';
+const APP_VER = '2026.11.16e';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -789,7 +815,7 @@ const IB_LBL = { wait:'처리 대기', hold:'보류', dup:'중복', done:'처리
 const ibTag = (x) => '<span class="ib-st ' + x.kind + '">' + esc(x.status) + '</span>';
 const ibTime = (x) => (/\d{1,2}:\d{2}/.exec(x.at) || [''])[0];
 function ibRow(x) {
-  return '<div class="ios-row" data-ibrow="' + x.row + '"><div class="tx"><div class="t1">' + esc(x.title) + '</div><div class="t2">' + esc([ibTime(x), x.amount != null ? fmt(x.amount) + '원' : '', x.kind === 'hold' && x.memo ? x.memo : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+  return '<div class="ios-row" data-ibrow="' + x.row + '"><div class="tx"><div class="t1">' + esc(x.title) + '</div><div class="t2">' + esc([ibTime(x), x.amount != null ? fmt(x.amount) + '원' : '', (x.kind === 'hold' || x.kind === 'wait') && x.memo ? x.memo : ''].filter(Boolean).join(' · ')) + '</div></div>' +
     '<div class="rt">' + ibTag(x) + (x.nos.length ? '<div class="sm">전표 ' + esc(x.nos.join(', ')) + '</div>' : '') + '</div></div>';
 }
 function ibCounts() {
@@ -826,6 +852,7 @@ function openInbox(row) {
     '<div class="dt-hero"><div class="dt-amt">' + (x.amount != null ? fmt(x.amount) + '<small>원</small>' : '알림') + '</div><div class="dt-t">' + esc(x.title) + '</div><div class="dt-s">' + esc(x.at) + ' 수신 · ' + ibTag(x) + '</div></div>' +
     (x.kind === 'hold' && x.memo ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">보류 사유</b><div style="margin-top:4px">' + esc(x.memo) + '</div></div>' : '') +
     (x.kind === 'wait' || x.kind === 'hold' ? '<div class="acts"><button class="pbtn" data-wr="mkentry" data-ibr="' + x.row + '">전표로 만들기</button></div>' : '') +
+    ((x.kind === 'wait' || x.kind === 'hold') && x.sug && (x.sug.debit || x.sug.credit) ? sec('추천 분개', vrow('차변', esc(x.sug.debit || '-')) + vrow('대변', esc(x.sug.credit || '-')) + (x.sug.basis ? '<div class="ios-row static"><div class="tx"><div class="t2" style="white-space:normal">' + esc(x.sug.basis) + ' · 전표로 만들기에 미리 채워져요</div></div></div>' : '')) : '') +
     sec('알림 원문', '<div class="ios-row static"><div class="ib-raw sel">' + esc(x.text) + '</div></div>') +
     (entries.length ? sec('입력된 전표', entries.map(jrow).join('')) : x.nos.length ? sec('입력된 전표', vrow('전표 번호', esc(x.nos.join(', ')))) : '') +
     (x.kind !== 'hold' && x.memo ? sec('메모', '<div class="ios-row static"><div class="tx"><div class="t1 wrap">' + esc(x.memo) + '</div></div></div>') : '') +
@@ -1108,6 +1135,10 @@ function build(raw) {
     if (rows.some((x) => x.confirm === '미확인')) lead.confirm = lead.void ? lead.confirm : '미확인';
   });
   const list = journal.filter((e) => !e.sub);
+  // 최근 사용 계정: 최근 전표 80건에서 많이 쓴 순서로 6개 (계정 선택 목록 맨 위에 보여줘요)
+  const cnt = new Map();
+  list.filter((e) => !e.void).slice(-80).forEach((e) => e.lines.forEach((l) => cnt.set(l.acct, (cnt.get(l.acct) || 0) + 1)));
+  const recentAccts = [...cnt.entries()].filter(([n]) => byName.has(n) && byName.get(n).active).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n]) => n);
   const valid = journal.filter((e) => e.valid);
   const flows = new Map(accounts.map((a) => [a.name, []]));
   valid.forEach((e) => { flows.get(e.debit).push([e.ym, e.amount, 0]); flows.get(e.credit).push([e.ym, 0, e.amount]); });
@@ -1144,12 +1175,12 @@ function build(raw) {
     inbox = { id:raw.inbox.id, gid:raw.inbox.gid, id2:raw.inbox.id2, gid2:raw.inbox.gid2, items:raw.inbox.rows.filter((r) => txt(r[1]) || txt(r[2])).map((r) => {
       const at = txt(r[1]), st = txt(r[3]), body = txt(r[2]);
       const amt = /([\d,]+)\s*원/.exec(body), shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(body);
-      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]),
+      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]), sug:r[6] && typeof r[6] === 'object' ? r[6] : null,
         amount:amt ? num(amt[1]) : null, title:shop ? shop[1].trim() : ibTitle(body) };
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
   const rules = (raw.rules || []).map((r) => ({ kw:txt(r[0]), debit:txt(r[1]), credit:txt(r[2]), desc:txt(r[3]), row:num(r[4]) })).filter((r) => r.kw);
-  return { accounts, byName, journal, list, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
+  return { accounts, byName, journal, list, recentAccts, valid, flows, years, ledger, issues:journal.filter((e) => e.problems.length), gid:raw.journalGid, sid:raw.spreadsheetId, at:raw.at, inbox, inboxErr, rules };
 }
 
 /* 여러 행(쌍)을 차변·대변 줄로: 같은 계정은 합쳐요. 처음 나온 순서 유지 */
@@ -1584,9 +1615,29 @@ function closeEntry() {
 /* ===== 쓰기: 확인 처리 · 전표 수정 · 수신함 알림을 전표로 ===== */
 function api(fn, ...args) {
   if (S.demo) return Promise.reject(new Error('샘플 데이터에서는 저장되지 않아요'));
+  return call(fn, args);
+}
+/* 서버 호출: Apps Script 안이면 google.script.run, GitHub Pages면 fetch로 웹앱 데이터 API(doPost) */
+function call(fn, args) {
+  if (WEB) return rpc(fn, args);
   return new Promise((res, rej) => withKey((key) => google.script.run
     .withSuccessHandler(res)
     .withFailureHandler((err) => rej(err && err.message ? err : new Error(String(err))))[fn](key, ...args)));
+}
+function rpc(fn, args) {
+  if (!CFG) return Promise.reject(new Error('연결 설정이 없어요'));
+  const ac = typeof AbortController === 'function' ? new AbortController() : null;
+  const tm = ac && setTimeout(() => ac.abort(), 45000);
+  // text/plain 본문 = 사전 요청(preflight) 없이 보내는 방식 (Apps Script 웹앱은 OPTIONS를 못 받아요)
+  return fetch(CFG.url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body:JSON.stringify({ k:CFG.key, fn, args }), redirect:'follow', cache:'no-store', signal:ac ? ac.signal : undefined })
+    .then((r) => { if (!r.ok) throw new Error('서버 응답 ' + r.status); return r.text(); })
+    .then((t) => {
+      let j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (!j) throw new Error('서버 응답을 읽지 못했어요. 웹앱 배포를 확인해 주세요');
+      if (!j.ok) throw new Error(j.error || '처리하지 못했어요');
+      return j.data;
+    }, (err) => { throw new Error(err && err.name === 'AbortError' ? '서버 응답이 너무 늦어요' : '연결하지 못했어요 · 인터넷 연결을 확인해 주세요'); })
+    .finally(() => { if (tm) clearTimeout(tm); });
 }
 /* 저장 뒤: 서버가 돌려준 바뀐 부분(행·수신함·규칙·계정)만 반영해요. 전체 다시 불러오기를 생략해서 바로 보여요.
    서버가 바뀐 부분을 안 주면(예전 서버) 전체를 다시 불러와요. */
@@ -1678,7 +1729,10 @@ async function voidUI(e, on) {
 }
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
 function acctOptions(sel, withCode) {
-  return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
+  const lbl = (a) => (withCode ? a.code + ' ' : '') + esc(a.name);
+  const rec = (S.D.recentAccts || []).map((n) => S.D.byName.get(n)).filter(Boolean);
+  return '<option value="" disabled' + (sel ? '' : ' selected') + '>계정 선택</option>' +
+    (rec.length ? '<optgroup label="최근 사용">' + rec.map((a) => '<option value="' + esc(a.name) + '">' + lbl(a) + '</option>').join('') + '</optgroup>' : '') + ['자산', '부채', '자본', '수익', '비용'].map((ty) => {
     const as = S.D.accounts.filter((a) => a.type === ty && (a.active || a.name === sel));
     return as.length ? '<optgroup label="' + ty + '">' + as.map((a) => '<option value="' + esc(a.name) + '"' + (a.name === sel ? ' selected' : '') + '>' + (withCode ? a.code + ' ' : '') + esc(a.name) + '</option>').join('') + '</optgroup>' : '';
   }).join('');
@@ -1745,8 +1799,13 @@ function entryFromInbox(ibRow) {
     if (Number(m[1]) > Number(x.dk.slice(4, 6))) y -= 1;   // 12월 알림을 1월에 받은 경우
     date = y + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
   }
-  const card = S.D.accounts.find((a) => a.type === '부채' && a.name.includes('카드'));
   const rule = ruleFor(x.text);
+  const g = x.sug;   // 서버 추천(분류규칙 → 과거 전표 학습). 서버 guess_가 기준이고, 없을 때만 아래 간단 추정
+  if (g && (g.debit || g.credit)) {
+    openForm('new', { ib:{ row:x.row, at:x.at }, kw:g.kw || '', rule, v:{ date:g.date || date, debit:g.debit || '', credit:g.credit || '', amount:g.amount || x.amount || 0, memo:g.memo || x.title, note:x.text, confirm:'확인' } });
+    return;
+  }
+  const card = /체크/.test(x.text) ? null : S.D.accounts.find((a) => a.type === '부채' && a.name.includes('카드'));
   const shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(x.text);
   const kw = rule ? rule.kw : shop ? shop[1].trim() : '';
   const credit = rule && rule.credit ? rule.credit : /승인/.test(x.text) && card ? card.name : '';
@@ -1872,7 +1931,10 @@ function moreView() {
     sec('보여주기', '<label class="ios-row"><div class="tx"><div class="t1">샘플 데이터로 보기</div><div class="t2" style="white-space:normal">다른 사람에게 보여줄 때 · 내 장부는 그대로이고 저장은 막혀요</div></div><input type="checkbox" class="sw" data-act="demo"' + (S.demo ? ' checked' : '') + ' aria-label="샘플 데이터로 보기"></label>') +
     sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
       (S.demo ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
-      row1('', '앱 버전', '', APP_VER));
+      row1('', '앱 버전', '', APP_VER + (WEB ? ' · 웹' : ' · 구글')) +
+      (WEB ? '<a class="ios-row act" href="../index.html#reset"><div class="tx"><div class="t1">연결 다시 설정</div><div class="t2">웹앱 주소·비밀키를 다시 입력해요</div></div>' + CHEV + '</a>' +
+        '<a class="ios-row act" href="../index.html#classic"><div class="tx"><div class="t1">예전 방식으로 열기</div><div class="t2">문제가 있을 때 · 구글 화면을 iframe으로 열어요</div></div>' + CHEV + '</a>'
+      : inShell ? '<a class="ios-row act" href="https://eastjuu.github.io/accounting/#web" target="_top"><div class="tx"><div class="t1">새 방식으로 열기</div><div class="t2">GitHub Pages에서 바로 열어 시작이 빨라요</div></div>' + CHEV + '</a>' : ''));
 }
 function rulesView() {
   const list = S.D.rules.slice().sort((a, b) => a.kw.localeCompare(b.kw, 'ko'));
@@ -2109,6 +2171,41 @@ $('view').addEventListener('touchend', () => {
   $('ptr').style.opacity = ''; $('ptr').style.transform = '';
   if (fire) load();
 }, { passive:true });
+/* 폰: 전표 줄을 왼쪽으로 밀면 확인 ↔ 미확인 (90px 넘게 밀고 놓으면 실행) */
+let sw = null, swEnd = 0;
+$('view').addEventListener('touchstart', (ev) => {
+  const r = ev.target.closest('.ios-row[data-entry]');
+  sw = null;
+  if (!isM() || !r || S.saving || S.demo) return;
+  const e = leadOf(S.D.journal.find((x) => x.row === Number(r.dataset.entry)));
+  if (!e || e.void) return;
+  sw = { r, e, x:ev.touches[0].clientX, y:ev.touches[0].clientY, dx:0, on:false };
+}, { passive:true });
+$('view').addEventListener('touchmove', (ev) => {
+  if (!sw) return;
+  const dx = ev.touches[0].clientX - sw.x, dy = ev.touches[0].clientY - sw.y;
+  if (!sw.on) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) >= Math.abs(dx)) { sw = null; return; }
+    if (dx > -12 || Math.abs(dx) < Math.abs(dy)) return;
+    sw.on = true; pull = null;
+    sw.r.classList.add('swiping');
+    sw.r.dataset.sw = sw.e.confirm === '확인' ? '미확인으로' : '확인';
+  }
+  sw.dx = Math.max(-150, Math.min(0, dx));
+  sw.r.style.transform = 'translateX(' + sw.dx + 'px)';
+  sw.r.classList.toggle('sw-go', sw.dx < -90);
+}, { passive:true });
+$('view').addEventListener('touchend', () => {
+  if (!sw) return;
+  const s0 = sw; sw = null;
+  if (!s0.on) return;
+  swEnd = Date.now();
+  s0.r.classList.remove('swiping', 'sw-go');
+  s0.r.style.transform = '';
+  setTimeout(() => { delete s0.r.dataset.sw; }, 450);
+  if (s0.dx < -90) setConfirmUI([s0.e], s0.e.confirm === '확인' ? '미확인' : '확인');
+}, { passive:true });
+$('view').addEventListener('click', (ev) => { if (Date.now() - swEnd < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);   // 민 뒤 손 뗄 때 상세가 열리지 않게
 /* 폰: 시트를 아래로 끌어 닫기 */
 let drag = null;
 $('drawer').addEventListener('touchstart', (ev) => {
@@ -2142,8 +2239,7 @@ function load() {
   if (S.D) $('ptr').classList.add('spin');
   document.querySelectorAll('.sq.rf').forEach((el) => el.classList.add('spin'));   // 처음(틀만 보일 때)은 틀 자체가 로딩 표시
   document.querySelectorAll('.lt-sub').forEach((el) => { if (S.D) el.textContent = '새로 불러오는 중…'; });
-  withKey((key) => google.script.run
-    .withSuccessHandler((raw) => {
+  call('getData', []).then((raw) => {
       if ((S.wv || 0) !== wv) { S.loading = false; load(); return; }   // 불러오는 사이에 저장됨 → 옛 데이터라 다시 불러와요
       S.loading = false; S.error = null; S.note = null;
       $('refresh').classList.remove('spin');
@@ -2159,8 +2255,7 @@ function load() {
       } catch (err) { S.error = err.message; }
       if (S.sel) { const r = S.sel; render(); openEntry(r); } else render();
       readyOnce();
-    })
-    .withFailureHandler((err) => {
+    }, (err) => {
       S.loading = false;
       $('refresh').classList.remove('spin');
       $('ptr').classList.remove('spin');
@@ -2168,15 +2263,14 @@ function load() {
       if (S.D) S.note = msg; else S.error = msg;   // 저장된 데이터가 있으면 그대로 보여줘요
       render();
       readyOnce();
-    })
-    .getData(key));
+    });
 }
 /* ===== 샘플 데이터 모드: 다른 사람에게 보여줄 때. 저장은 막고, 실제 데이터는 화면에 그리지 않아요 ===== */
 const DEMO_KEY = 'ledger-demo';
-function demoFlag() { try { return localStorage.getItem(DEMO_KEY) === '1'; } catch (e) { return false; } }
+function demoFlag() { try { return localStorage.getItem(DEMO_KEY) === '1' || (WEB && localStorage.getItem('ledger-demo-mode') === '1'); } catch (e) { return false; } }
 function setDemo(on, quiet) {
   S.demo = on;
-  try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY); } catch (e) {}
+  try { if (on) localStorage.setItem(DEMO_KEY, '1'); else { localStorage.removeItem(DEMO_KEY); localStorage.removeItem('ledger-demo-mode'); } } catch (e) {}
   toShell({ type:'ledger-demo', on });
   closeEntry(); S.stack = []; S.st = ''; S.q = ''; S.ib = ''; S.account = null; S.hm = 0; S.tabI = null;
   if (on) S.D = build(sampleRaw());
@@ -2267,7 +2361,7 @@ function withKey(cb) {
 }
 /* 마지막으로 받은 데이터를 이 기기에 저장해 두고, 다음에 열 때 먼저 보여줘요 */
 const CACHE = 'ledger-cache-v1';
-function cacheRead() { try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); return c && Array.isArray(c.journal) && Array.isArray(c.accounts) ? c : null; } catch (e) { return null; } }
+function cacheRead() { try { const c = JSON.parse(localStorage.getItem(CACHE) || (WEB ? localStorage.getItem('ledger-data-cache') : null) || 'null'); return c && Array.isArray(c.journal) && Array.isArray(c.accounts) ? c : null; } catch (e) { return null; } }
 function cacheWrite(raw) { try { localStorage.setItem(CACHE, JSON.stringify(raw)); } catch (e) {} }
 /* GitHub 껍데기 페이지와 주고받기
    - 아이폰은 이 화면(구글 주소) 안의 저장 공간을 지워 버려서, 마지막 데이터를 껍데기 쪽에 맡겨 둬요
