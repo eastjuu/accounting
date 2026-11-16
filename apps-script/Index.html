@@ -453,6 +453,7 @@ button.jl-add{width:100%;border:0;background:none;font:inherit;font-size:15px;co
 .ios-row[data-sw]::after{content:attr(data-sw);position:absolute;top:0;bottom:0;left:100%;width:150px;display:flex;align-items:center;padding-left:20px;background:var(--muted);color:#fff;font-size:15px;font-weight:600;transition:background-color .15s}
 .ios-row.sw-go::after{background:var(--accent)}
 .ios-row.swiping{transition:none!important}
+.st-sav{color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:calc(110px + env(safe-area-inset-bottom));transform:translate(-50%,16px);z-index:40;max-width:calc(100% - 40px);padding:12px 18px;border-radius:14px;background:var(--fg);color:var(--bg);font-size:14px;font-weight:500;box-shadow:0 10px 30px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 .toast.bad{background:var(--bad);color:#fff}
@@ -707,7 +708,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16g';
+const APP_VER = '2026.11.16h';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -742,7 +743,7 @@ const ico = (k, cls) => '<svg' + (cls ? ' class="' + cls + '"' : '') + ' viewBox
 const icon = (k) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + ICONS[k] + '</svg>';
 
 /* ===== 상태 ===== */
-const S = { raw:null, D:null, view:'summary', y:null, m:0, account:null, q:'', st:'', nz:false, sel:null, loading:false, error:null, note:null, stack:[], anim:null, shown:{}, ib:'', hm:0, arm:false, saving:false, demo:false, realRaw:null };
+const S = { raw:null, D:null, view:'summary', y:null, m:0, account:null, q:'', st:'', nz:false, sel:null, loading:false, error:null, note:null, stack:[], anim:null, shown:{}, ib:'', hm:0, arm:false, saving:false, demo:false, realRaw:null, pend:[], busy:new Set(), inflight:0, reload:false, wv:0 };
 
 /* ===== 도구 ===== */
 const $ = (id) => document.getElementById(id);
@@ -770,7 +771,7 @@ function dLabel(dk) {
 }
 const atLabel = (at) => { const m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}:\d{2})/.exec(at || ''); return m ? +m[2] + '월 ' + +m[3] + '일 ' + m[4] : String(at || ''); };
 const stMatch = (e) => (!S.st ? !e.void : S.st === '무효' ? e.void : S.st === '오류' ? e.problems.length > 0 : e.confirm === S.st);
-const stTag = (e) => e.void ? '<div class="sm st-void">무효</div>' : e.problems.length && !e.valid ? '<div class="sm st-bad">오류</div>' : e.confirm === '미확인' ? '<div class="sm st-warn">미확인</div>' : '';
+const stTag = (e) => e.saving ? '<div class="sm st-sav">저장 중…</div>' : e.void ? '<div class="sm st-void">무효</div>' : e.problems.length && !e.valid ? '<div class="sm st-bad">오류</div>' : e.confirm === '미확인' ? '<div class="sm st-warn">미확인</div>' : '';
 const isInc = (e) => e.lines.filter((l) => l.side === '대').every((l) => { const a = S.D.byName.get(l.acct); return !!a && a.type === '수익'; });
 function jrow(e) {
   const inc = isInc(e);
@@ -1095,6 +1096,7 @@ function skeleton() {
 }
 
 /* ===== 데이터 가공 ===== */
+const PEND0 = 1000000;   // 저장 중인 새 전표의 임시 행 번호 시작
 function build(raw) {
   const GROUPS = { '현금및예금':'cash', '적금':'savings', '투자자산':'invest', '기타자산':'other' };
   const accounts = raw.accounts.filter((r) => txt(r[1])).map((r) => {
@@ -1108,9 +1110,11 @@ function build(raw) {
   const byName = new Map(accounts.map((a) => [a.name, a]));
 
   const journal = [];
-  raw.journal.forEach((r, i) => {
+  const src = raw.journal.map((r, i) => [i + 2, r]);
+  (raw.pend || []).forEach((p) => src.push([p.row, p.r]));   // 서버 저장을 기다리는 새 행 (행 번호 PEND0 이상)
+  src.forEach(([row, r]) => {
     if (![1,2,3,4].some((k) => txt(r[k]) !== '')) return;
-    const e = { row:i + 2, no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]), grp:txt(r[12]) };
+    const e = { row, saving:row >= PEND0 || !!(raw.busy && raw.busy.has(row)), no:txt(r[0]), date:txt(r[1]), debit:txt(r[2]), credit:txt(r[3]), amount:num(r[4]), memo:txt(r[5]), check:txt(r[9]), confirm:txt(r[10]), note:txt(r[11]), grp:txt(r[12]) };
     e.dk = dkey(e.date);
     e.ym = e.dk ? Number(e.dk.slice(0, 6)) : 0;
     e.void = e.confirm === '무효';   // 무효 전표: 목록엔 남고 집계·원장에서 빠짐
@@ -1465,7 +1469,7 @@ const VIEWS = {
       months.map((x) => '<tr><td>' + x.m + '월</td>' + numCell(x.rev) + numCell(x.exp) + numCell(x.net) + numCell(x.ytd) + '</tr>').join('') + '</tbody></table></div></div>';
   },
 };
-const badge = (e) => e.void ? '<span class="badge void">무효</span>' : e.problems.length && !e.valid ? '<span class="badge pending">오류</span>' : e.confirm === '미확인' ? '<span class="badge pending">미확인</span>' : '<span class="badge">' + esc(e.confirm || '-') + '</span>';
+const badge = (e) => e.saving ? '<span class="badge pending">저장 중</span>' : e.void ? '<span class="badge void">무효</span>' : e.problems.length && !e.valid ? '<span class="badge pending">오류</span>' : e.confirm === '미확인' ? '<span class="badge pending">미확인</span>' : '<span class="badge">' + esc(e.confirm || '-') + '</span>';
 
 function drawChart() {
   const el = $('chart');
@@ -1596,7 +1600,7 @@ function openEntry(row) {
   $('drBody').innerHTML =
     '<div class="dt-hero"><div class="dt-amt' + (inc ? ' pos' : '') + '">' + (inc ? '+' : '') + fmt(e.total) + '<small>원</small></div><div class="dt-t">' + esc(memoT(e.memo) || vSides(e)) + '</div><div class="dt-s">' + esc(e.dk ? dLabel(e.dk) : (e.date || '날짜 없음')) + ' · ' + badge(e) + '</div></div>' +
     (e.problems.length ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">확인 필요</b><div style="margin-top:4px">' + esc(e.problems.join(', ')) + '</div></div>' : '') +
-    (e.void ? '<div class="card" style="padding:12px 14px;margin-bottom:16px;color:var(--muted)">무효 처리된 전표예요 · 장부 계산에서 빠져 있어요</div>' +
+    (e.saving ? '<div class="card" style="padding:12px 14px;margin-bottom:16px;color:var(--muted)">저장 중이에요 · 끝나면 확인·수정할 수 있어요</div>' : e.void ? '<div class="card" style="padding:12px 14px;margin-bottom:16px;color:var(--muted)">무효 처리된 전표예요 · 장부 계산에서 빠져 있어요</div>' +
       '<div class="acts"><button class="sbtn" data-wr="unvoid">무효 취소</button></div>'
     : '<div class="acts">' + (e.confirm === '확인' ? '<button class="sbtn" data-wr="unconfirm">미확인으로 되돌리기</button>' : '<button class="pbtn" data-wr="confirm">확인 처리</button>') + '<button class="sbtn" data-wr="edit">수정</button></div>' +
       '<div class="acts"><button class="sbtn voidbtn' + (S.armV === e.row ? ' arm' : '') + '" data-wr="void">' + (S.armV === e.row ? '한 번 더 누르면 무효 처리돼요' : '무효 처리') + '</button></div>') +
@@ -1605,7 +1609,7 @@ function openEntry(row) {
       (e.memo ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">적요</div><div class="t1 wrap">' + esc(e.memo) + '</div></div></div>' : '') +
       (e.note ? '<div class="ios-row static"><div class="tx"><div class="t2" style="margin:0 0 3px">메모</div><div class="t1 wrap sel" style="white-space:pre-wrap">' + esc(e.note) + '</div></div></div>' : '')) +
     sec('', accts.map((n) => '<div class="ios-row act" data-acct="' + esc(n) + '"><div class="tx"><div class="t1">' + esc(n) + ' 원장 보기</div></div>' + CHEV + '</div>').join('') +
-      '<a class="ios-row act" href="' + esc(url) + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">시트에서 이 행 열기</div></div><span class="val">↗</span></a>');
+      (e.saving ? '' : '<a class="ios-row act" href="' + esc(url) + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">시트에서 이 행 열기</div></div><span class="val">↗</span></a>'));
   $('drBody').scrollTop = 0;
   $('drawer').classList.add('on');
   $('drawer').setAttribute('aria-hidden', 'false');
@@ -1662,7 +1666,7 @@ function applyPatch(p) {
     if (p.rules) raw.rules = p.rules;
     if (p.accounts) raw.accounts = p.accounts;
     S.wv = (S.wv || 0) + 1;   // 진행 중이던 불러오기 결과(저장 전 데이터)는 버리게
-    S.D = build(raw);
+    S.D = build(withPend(raw));
     cacheWrite(raw);
     toShell({ type:'ledger-save', raw });
   } catch (err) { load(); return; }
@@ -1691,47 +1695,57 @@ function allBtn(list) {
 }
 function visibleUnconfirmed() {
   const q = S.q.toLowerCase();
-  return S.D.list.filter((e) => e.confirm === '미확인' && (!q || srch(e).toLowerCase().includes(q)));
+  return S.D.list.filter((e) => e.confirm === '미확인' && !e.saving && (!q || srch(e).toLowerCase().includes(q)));
 }
-/* 확인 상태 바꾸기: 화면에 먼저 반영하고, 실패하면 되돌려요 */
-async function setConfirmUI(entries, value) {
-  if (!entries.length || S.saving) return;
+/* ===== 저장: 화면에 먼저 반영하고, 서버에는 대기열로 순서대로 보내요 =====
+   - 확인·무효·수정은 장부 행(S.realRaw)을 바로 바꾸고(되돌릴 복사본 보관), 새 전표는 임시 행(S.pend)으로 보여줘요.
+   - 서버가 성공하면 돌려준 실제 행으로 바꾸고(applyPatch), 실패하면 되돌려요. 새 전표·수정은 입력하던 폼을 다시 열어요.
+   - 대기 중에는 전체 다시 불러오기를 미뤘다가(S.reload) 다 끝나면 해요. */
+let wq = Promise.resolve(), PSEQ = 0;
+function withPend(raw) { return Object.assign({}, raw, { pend:S.pend, busy:S.busy }); }
+function rebuild() { if (S.realRaw && !S.demo) S.D = build(withPend(S.realRaw)); }
+function rerender() { if (S.sel) { const r = S.sel; render(); openEntry(r); } else render(); }
+function syncMark() { const b = $('refresh'); if (b) b.classList.toggle('spin', S.inflight > 0 || S.loading); }
+function enqueue(fn, args, ok, fail) {
+  S.inflight++; S.wv++; syncMark();
+  wq = wq.then(() => api(fn, ...args)).then(ok, fail).catch((err) => console.error(err)).then(() => {
+    S.inflight--; syncMark();
+    if (!S.inflight && S.reload) { S.reload = false; load(); }
+  });
+}
+const rawRow = (row) => S.realRaw.journal[row - 2] || [];
+const snap = (rows) => rows.map((r) => [r, rawRow(r).slice()]);
+const restore = (sn) => sn.forEach(([r, v]) => { S.realRaw.journal[r - 2] = v; });
+function setK(row, val, clearGrp) {
+  const r = rawRow(row).slice(); while (r.length < 13) r.push('');
+  r[10] = val; if (clearGrp) r[12] = '';
+  S.realRaw.journal[row - 2] = r;
+}
+const demoBlock = () => { if (!S.demo) return false; toast('샘플 데이터에서는 저장되지 않아요', true); return true; };
+/* 확인 상태 바꾸기 (여러 줄 전표는 묶음 전체) */
+function setConfirmUI(entries, value) {
+  if (demoBlock()) return;
+  entries = entries.filter((e) => !e.saving);
   const nv = entries.length;
-  entries = entries.flatMap((e) => e.grpRows || [e]);   // 여러 줄 전표는 묶음 전체
-  S.saving = true;
-  const prev = entries.map((e) => e.confirm);
-  entries.forEach((e) => { e.confirm = value; });
-  render(); if (S.sel) openEntry(S.sel);
-  try {
-    const r = await api('setConfirm', entries.map((e) => ({ row:e.row, no:e.no })), value);
-    toast(value === '확인' ? nv + '건을 확인했어요' : '미확인으로 되돌렸어요');
-    S.saving = false;
-    applyPatch(r);
-  } catch (err) {
-    entries.forEach((e, i) => { e.confirm = prev[i]; });
-    S.saving = false;
-    render(); if (S.sel) openEntry(S.sel);
-    toast('저장하지 못했어요 · ' + err.message, true);
-  }
+  if (!nv) return;
+  const rows = entries.flatMap((e) => e.grpRows || [e]).filter((x) => !x.void);
+  const sn = snap(rows.map((x) => x.row));
+  rows.forEach((x) => setK(x.row, value));
+  rebuild(); rerender();
+  enqueue('setConfirm', [rows.map((x) => ({ row:x.row, no:x.no })), value],
+    (r) => { applyPatch(r); toast(value === '확인' ? nv + '건을 확인했어요' : '미확인으로 되돌렸어요'); },
+    (err) => { restore(sn); rebuild(); rerender(); toast('저장하지 못했어요 · ' + err.message, true); });
 }
-async function voidUI(e, on) {
-  if (S.saving) return;
-  S.saving = true; S.armV = 0;
+function voidUI(e, on) {
+  if (demoBlock() || e.saving) return;
+  S.armV = 0;
   const rows = e.grpRows || [e];
-  const prev = rows.map((x) => x.confirm);
-  rows.forEach((x) => { x.confirm = on ? '무효' : '미확인'; x.void = on; });
-  render(); openEntry(e.row);
-  try {
-    const r = await api('voidEntry', e.row, e.no, on);
-    toast(on ? '전표 ' + e.no + '번을 무효 처리했어요' : '무효를 취소했어요 · 미확인 상태예요');
-    S.saving = false;
-    applyPatch(r);
-  } catch (err) {
-    rows.forEach((x, i) => { x.confirm = prev[i]; x.void = prev[i] === '무효'; });
-    S.saving = false;
-    render(); openEntry(e.row);
-    toast('저장하지 못했어요 · ' + err.message, true);
-  }
+  const sn = snap(rows.map((x) => x.row));
+  rows.forEach((x) => setK(x.row, on ? '무효' : '미확인'));
+  rebuild(); rerender();
+  enqueue('voidEntry', [e.row, e.no, on],
+    (r) => { applyPatch(r); toast(on ? '전표 ' + e.no + '번을 무효 처리했어요' : '무효를 취소했어요 · 미확인 상태예요'); },
+    (err) => { restore(sn); rebuild(); rerender(); toast('저장하지 못했어요 · ' + err.message, true); });
 }
 const isoOf = (dk) => (dk ? dk.slice(0, 4) + '-' + dk.slice(4, 6) + '-' + dk.slice(6, 8) : '');
 function acctOptions(sel, withCode) {
@@ -1767,6 +1781,7 @@ function jlSum() {
   const rs = $('ruleSec'); if (rs) rs.hidden = multi;
 }
 function openForm(mode, ctx) {
+  S.formCtx = { mode, ctx };
   const v = ctx.v;
   const lines = v.lines ? v.lines.map((l) => ({ ...l })) : [{ side:'차', acct:v.debit || '', amount:v.amount || 0 }, { side:'대', acct:v.credit || '', amount:v.amount || 0 }];
   S.form = { mode, row:ctx.row, no:ctx.no, refs:ctx.refs || null, grp:!!ctx.grp, ib:ctx.ib || null };
@@ -1790,7 +1805,7 @@ function openForm(mode, ctx) {
 }
 function editEntry(row) {
   const e = leadOf(S.D.journal.find((x) => x.row === row));
-  if (!e || e.void) return;
+  if (!e || e.void || e.saving) return;
   const refs = (e.grpRows || [e]).map((x) => ({ row:x.row, no:x.no }));
   openForm('edit', { row:e.row, no:e.no, refs, grp:!!e.grpRows, v:{ date:isoOf(e.dk), lines:e.lines, memo:e.memo, note:(e.grpRows || [e]).map((x) => x.note).filter(Boolean).join('\n'), confirm:e.confirm } });
 }
@@ -1817,8 +1832,8 @@ function entryFromInbox(ibRow) {
   const credit = rule && rule.credit ? rule.credit : /승인/.test(x.text) && card ? card.name : '';
   openForm('new', { ib:{ row:x.row, at:x.at }, kw, rule, v:{ date, debit:rule ? rule.debit : '', credit, amount:x.amount || 0, memo:(rule && rule.desc) || x.title, note:x.text, confirm:'확인' } });
 }
-async function submitForm(f) {
-  if (S.saving) return;
+function submitForm(f) {
+  if (demoBlock()) return;
   const F = S.form;
   const ls = jlRead(f).filter((l) => l.acct || l.dr || l.cr);
   const v = { date:f.date.value, memo:f.memo.value.trim(), note:f.note.value.trim(), confirm:f.confirm.value, lines:ls.map((l) => ({ side:l.side, acct:l.acct, amount:l.amount })) };
@@ -1839,26 +1854,45 @@ async function submitForm(f) {
     if (!f.kw.value.trim()) { toast('분류 규칙 키워드를 넣거나, 규칙 저장을 꺼 주세요', true); return; }
     one.rule = { keyword:f.kw.value.trim(), desc:f.rdesc.value.trim() };
   }
-  S.saving = true;
-  $('efSave').disabled = true; $('efSave').textContent = '저장 중…';
-  try {
-    let r;
-    if (F.mode === 'edit') {
-      r = single ? await api('updateEntry', F.row, F.no, one) : await api('saveVoucher', F.refs, v, null);
-      toast('전표 ' + F.no + '번을 수정했어요' + (!single ? ' · ' + pairs.length + '행' : ''));
-      S.sel = F.row;            // 반영한 뒤 이 전표를 다시 보여줘요
-    } else {
-      r = single ? await api('addEntry', one, F.ib) : await api('saveVoucher', [], v, F.ib);
-      toast('전표 ' + r.no + '번을 만들었어요' + (!single ? ' · 여러 줄 ' + pairs.length + '행' : one.rule ? ' · 규칙 저장' : ''));
-      closeEntry();
-    }
-    S.saving = false;
-    applyPatch(r);
-  } catch (err) {
-    S.saving = false;
-    $('efSave').disabled = false; $('efSave').textContent = '저장';
-    toast('저장하지 못했어요 · ' + err.message, true);
+  // ---- 화면에 먼저 반영 ----
+  const c0 = S.formCtx ? S.formCtx.ctx : {};
+  const again = Object.assign({}, c0, { kw:f.kw ? f.kw.value : c0.kw, v:Object.assign({}, c0.v, { date:v.date, memo:v.memo, note:v.note, confirm:v.confirm, lines:v.lines }) });
+  const pid = ++PSEQ;
+  const mk = (p, i, grp, no, old) => { const o = old || []; return [no || '', v.date, p.debit, p.credit, p.amount, v.memo, o[6] || '', o[7] || '', o[8] || '', 'OK', v.confirm, i === 0 ? v.note : '', grp]; };
+  let sn = [], ibSn = null;
+  const busy = [];
+  if (F.mode === 'edit') {
+    const refs = F.refs || [{ row:F.row, no:F.no }];
+    const keep = Math.min(refs.length, pairs.length);
+    const grp = pairs.length > 1 ? (txt(rawRow(refs[0].row)[12]) || 'P' + pid) : '';
+    sn = snap(refs.map((r) => r.row));
+    for (let i = 0; i < keep; i++) { const row = refs[i].row, old = rawRow(row); S.realRaw.journal[row - 2] = mk(pairs[i], i, grp, old[0], old); busy.push(row); }
+    for (let i = keep; i < pairs.length; i++) S.pend.push({ pid, row:PEND0 + (++PSEQ), r:mk(pairs[i], i, grp) });
+    refs.slice(keep).forEach((r) => { setK(r.row, '무효', true); busy.push(r.row); });
+  } else {
+    const grp = pairs.length > 1 ? 'P' + pid : '';
+    pairs.forEach((p, i) => S.pend.push({ pid, row:PEND0 + (++PSEQ), r:mk(p, i, grp) }));
+    const ib = F.ib && S.realRaw.inbox && S.realRaw.inbox.rows ? S.realRaw.inbox.rows.findIndex((x) => x[0] === F.ib.row) : -1;
+    if (ib >= 0) { ibSn = [ib, S.realRaw.inbox.rows[ib].slice()]; S.realRaw.inbox.rows[ib] = Object.assign([], S.realRaw.inbox.rows[ib], { 3:'처리됨' }); }
   }
+  busy.forEach((r) => S.busy.add(r));
+  closeEntry();
+  rebuild();
+  if (F.mode === 'edit') { render(); openEntry(F.row); } else render();
+  const done = () => { S.pend = S.pend.filter((x) => x.pid !== pid); busy.forEach((r) => S.busy.delete(r)); };
+  const fn = F.mode === 'edit' ? (single ? 'updateEntry' : 'saveVoucher') : (single ? 'addEntry' : 'saveVoucher');
+  const args = F.mode === 'edit' ? (single ? [F.row, F.no, one] : [F.refs, v, null]) : (single ? [one, F.ib] : [[], v, F.ib]);
+  enqueue(fn, args, (r) => {
+    done(); applyPatch(r);
+    toast(F.mode === 'edit' ? '전표 ' + F.no + '번을 수정했어요' + (!single ? ' · ' + pairs.length + '행' : '')
+      : '전표 ' + (r && r.no) + '번을 만들었어요' + (!single ? ' · 여러 줄 ' + pairs.length + '행' : one.rule ? ' · 규칙 저장' : ''));
+  }, (err) => {
+    done(); restore(sn);
+    if (ibSn) S.realRaw.inbox.rows[ibSn[0]] = ibSn[1];
+    rebuild(); render();
+    openForm(F.mode, again);   // 입력하던 내용 그대로 다시 열기
+    toast('저장하지 못했어요 · ' + err.message + ' · 입력한 내용을 다시 열었어요', true);
+  });
 }
 document.addEventListener('submit', (ev) => { if (ev.target.id === 'ef') { ev.preventDefault(); submitForm(ev.target); } });
 document.addEventListener('input', (ev) => {
@@ -2186,7 +2220,7 @@ $('view').addEventListener('touchstart', (ev) => {
   sw = null;
   if (!isM() || !r || S.saving || S.demo) return;
   const e = leadOf(S.D.journal.find((x) => x.row === Number(r.dataset.entry)));
-  if (!e || e.void) return;
+  if (!e || e.void || e.saving) return;
   sw = { r, e, x:ev.touches[0].clientX, y:ev.touches[0].clientY, dx:0, on:false };
 }, { passive:true });
 $('view').addEventListener('touchmove', (ev) => {
@@ -2241,6 +2275,7 @@ window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() =
 function load() {
   if (S.demo) { toast('샘플 데이터예요 · 끄려면 전체 → 샘플 데이터로 보기'); render(); return; }
   if (S.loading) return;
+  if (S.inflight) { S.reload = true; $('ptr').classList.remove('spin'); return; }   // 저장 대기 중 → 끝나면 불러와요
   S.loading = true;
   const wv = S.wv || 0;
   $('refresh').classList.add('spin');
@@ -2256,7 +2291,7 @@ function load() {
       try {
         if (!S.D) S.reveal = true;   // 틀만 보이던 상태에서 처음 채워질 때
         S.realRaw = raw;
-        S.D = build(raw);
+        S.D = build(withPend(raw));
         if (!S.y || !S.D.years.includes(S.y)) S.y = S.D.years[S.D.years.length - 1] || new Date().getFullYear();
         cacheWrite(raw);
         toShell({ type:'ledger-save', raw });
