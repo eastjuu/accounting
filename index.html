@@ -14,20 +14,26 @@
 <link rel="icon" type="image/png" href="icon-512.png?v=2">
 <title>가계부</title>
 <script>
-  // 시작: 연결 설정이 있으면 앱 화면(같은 GitHub Pages의 apps-script/Index.html)으로 바로 넘어가요.
-  //  - 앱 화면이 구글 iframe 없이 여기서 직접 열리고, 데이터만 웹앱 API(doPost)로 받아요 → 첫 화면이 빨라요.
-  //  - 주소 끝 #reset: 설정 초기화 / #classic: 예전 방식(구글 화면을 iframe으로) / #web: 다시 새 방식
+  // 시작: 연결 설정이 있으면 앱 화면(apps-script/Index.html)을 **이 주소 그대로** 그려요.
+  //  - 주소를 옮기면 아이폰 홈 화면 앱이 "앱 밖"으로 보고 사파리 주소창·버튼을 띄워서, 이동하지 않고 내용만 바꿔요.
+  //  - 앱 화면 파일은 이 기기에 저장해 두고(ledger-app-html) 다음부터 바로 그리며, 새 버전은 뒤에서 받아 다음 실행부터 반영.
+  //  - ?reset(#reset): 설정 초기화 / ?classic(#classic): 예전 방식(구글 화면 iframe) / ?web(#web): 새 방식
   (function () {
-    var S = 'ledger-app-settings', cfg = null, h = location.hash;
+    var S = 'ledger-app-settings', cfg = null, q = location.search, h = location.hash;
+    var has = function (n) { return h === '#' + n || new RegExp('[?&]' + n + '(=|&|$)').test(q); };
     try { cfg = JSON.parse(localStorage.getItem(S) || 'null'); } catch (e) {}
     var save = function () { try { localStorage.setItem(S, JSON.stringify(cfg)); } catch (e) {} };
-    if (h === '#reset') {
-      try { localStorage.removeItem(S); localStorage.removeItem('ledger-data-cache'); localStorage.removeItem('ledger-cache-v1'); } catch (e) {}
-      history.replaceState(null, '', location.pathname); return;
+    var clean = function () { history.replaceState(null, '', location.pathname); };
+    if (has('reset')) {
+      try { [S, 'ledger-data-cache', 'ledger-cache-v1', 'ledger-app-html'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+      clean(); return;
     }
-    if (cfg && h === '#classic') { cfg.mode = 'classic'; save(); history.replaceState(null, '', location.pathname); }
-    if (cfg && h === '#web') { delete cfg.mode; save(); history.replaceState(null, '', location.pathname); }
-    if (cfg && cfg.url && cfg.key && cfg.mode !== 'classic') location.replace('apps-script/Index.html');
+    if (cfg && has('classic')) { cfg.mode = 'classic'; save(); clean(); }
+    if (cfg && has('web')) { delete cfg.mode; save(); clean(); }
+    if (cfg && cfg.url && cfg.key && cfg.mode !== 'classic') {
+      window.__ledgerApp = true;
+      document.write('<style>body > * { display: none !important; }</style>');   // 첫 화면 내용은 숨기고 앱으로 바꿔요
+    }
   })();
 </script>
 <!-- 구글 서버·글꼴 서버와 미리 연결해 두어 첫 로딩을 조금이라도 줄여요 -->
@@ -151,6 +157,21 @@
 </div>
 
 <script>
+(function () {
+  // 앱 모드: 저장해 둔 앱 화면이 있으면 바로 그리고, 새 버전은 뒤에서 받아 저장(다음 실행부터 반영). 없으면 받아서 그려요.
+  if (window.__ledgerApp) {
+    var HTML = 'ledger-app-html', cached = null;
+    try { cached = localStorage.getItem(HTML); } catch (e) {}
+    var show = function (t) { document.open(); document.write(t); document.close(); };
+    var get = fetch('apps-script/Index.html', { cache: 'no-cache' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (t) { if (t.indexOf('id="view"') < 0) throw new Error('앱 화면 파일이 이상해요'); try { localStorage.setItem(HTML, t); } catch (e) {} return t; });
+    if (cached && cached.indexOf('id="view"') >= 0) { setTimeout(function () { show(cached); }, 0); get.catch(function () {}); }
+    else get.then(show, function (err) {
+      document.write('<div style="display:block!important;padding:calc(60px + env(safe-area-inset-top)) 24px;text-align:center;font-size:15px;color:#6b7280">앱 화면을 불러오지 못했어요 (' + (err && err.message || '연결 오류') + ')<br><br><a href="./" style="color:#f0712c">다시 시도</a> · <a href="./?classic" style="color:#f0712c">예전 방식으로 열기</a></div>');
+    });
+    return;
+  }
   var STORE = 'ledger-app-settings';
   function read() { try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { return null; } }
   function write(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); return true; } catch (e) { return false; } }
@@ -160,9 +181,7 @@
   var DEMO = 'ledger-demo-mode';   // 샘플 데이터 모드(앱 '전체'에서 켬)
 
   var cfg = read();
-  if (cfg && cfg.url && cfg.key && cfg.mode !== 'classic') {
-    // 새 방식: head에서 앱 화면으로 넘어가는 중이에요 (여기선 아무것도 안 해요)
-  } else if (cfg && cfg.url && cfg.key) {
+  if (cfg && cfg.url && cfg.key) {
     // 예전 방식(#classic): 구글 화면을 iframe으로
     var f = document.getElementById('app');
     f.src = cfg.url + (cfg.url.indexOf('?') < 0 ? '?' : '&') + 'k=' + encodeURIComponent(cfg.key);
@@ -182,6 +201,7 @@
       if (!d || !trusted(ev.origin)) return;
       if (d.type === 'ledger-ready') hide();
       else if (d.type === 'ledger-save' && d.raw) { try { localStorage.setItem(DATA, JSON.stringify(d.raw)); } catch (e) {} }
+      else if (d.type === 'ledger-mode' && d.mode === 'web') { delete cfg.mode; write(cfg); location.reload(); }   // 앱 '새 방식으로 열기'
       else if (d.type === 'ledger-demo') { try { if (d.on) localStorage.setItem(DEMO, '1'); else localStorage.removeItem(DEMO); } catch (e) {} }
       else if (d.type === 'ledger-hello') {
         // 샘플 모드면 내 데이터 대신 "샘플로 보여줘"만 보내요 (앱 저장 공간이 지워져도 샘플 모드 유지)
@@ -205,6 +225,7 @@
       location.reload();
     });
   }
+})();
 </script>
 </body>
 </html>

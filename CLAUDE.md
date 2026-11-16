@@ -13,7 +13,7 @@
 ## 저장소 구조
 ```
 /                     ← GitHub Pages로 그대로 공개됨 (공개 저장소)
-├─ index.html         첫 화면: 연결 설정 → 앱 화면(apps-script/Index.html)으로 이동. #classic이면 예전 iframe 방식 (반드시 소문자 index.html)
+├─ index.html         첫 화면: 연결 설정 → 앱 화면(apps-script/Index.html)을 **같은 주소에서** 그림(document.write). ?classic이면 예전 iframe 방식 (반드시 소문자 index.html)
 ├─ icon.png           홈 화면 아이콘 180×180 (바꾸면 index.html의 ?v=N도 올리기)
 ├─ icon-512.png
 ├─ apps-script/       clasp로 Apps Script 프로젝트와 연결된 폴더
@@ -106,12 +106,14 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 ## 실행 방식 두 가지 (같은 Index.html)
 | | **WEB (기본)** | **GAS (예전·#classic)** |
 |---|---|---|
-| 화면 | GitHub Pages의 `apps-script/Index.html`을 직접 엶 (`index.html`이 head에서 바로 이동) | `index.html` 안 iframe에 Apps Script 웹앱 화면 |
+| 화면 | `index.html`이 `apps-script/Index.html`을 받아 **주소 이동 없이** 같은 페이지에 그림(`document.open/write`). 받은 파일은 localStorage `ledger-app-html`에 두고 다음 실행부터 즉시 그림, 새 버전은 뒤에서 받아 **다음 실행부터** 반영 | `index.html` 안 iframe에 Apps Script 웹앱 화면 |
 | 데이터 | `call()` → `rpc()`: `fetch(웹앱 주소, POST, Content-Type text/plain, {k, fn, args})` → 서버 `doPost` → `api_`(허용 목록: getData·setConfirm·updateEntry·voidEntry·addEntry·saveVoucher·saveRule·deleteRule·addAccount·setAccountUse) → `{ok, data}` / `{ok:false, error}` | `google.script.run` |
 | 판별 | head 스크립트 `WEB = !google.script.run`, 설정 `CFG` = localStorage `ledger-app-settings` {url, key, mode}. 설정 없으면 `../index.html`로 | |
 | 캐시 | 같은 출처 localStorage `ledger-cache-v1` (없으면 예전 껍데기 캐시 `ledger-data-cache`) | 앱 localStorage + 껍데기에 postMessage |
 | 상단 | `html.web body{padding-top:env(safe-area-inset-top)}` (예전 iframe 위치와 같게) | 껍데기 iframe이 상태 표시줄 아래 |
-- 전환: `index.html#classic`(mode='classic' 저장) / `#web` / `#reset`. 홈 화면 앱은 주소창이 없어서 **앱 전체 → 정보**에 '예전 방식으로 열기'(WEB)·'새 방식으로 열기'(GAS iframe 안) 링크가 있음. 사파리와 홈 화면 앱은 저장 공간이 따로.
+- ⚠️ **주소를 옮기지 말 것**: 홈 화면 앱에서 다른 경로(예: `/apps-script/Index.html`)로 이동하면 아이폰이 앱 밖으로 보고 사파리 주소창·버튼을 띄움(2026-11-16 실제로 발생). 전환·초기화도 같은 주소 다시 열기로 처리.
+- 전환: `?classic`/`#classic`(mode='classic' 저장) / `?web` / `?reset`. 홈 화면 앱은 주소창이 없어서 **앱 전체 → 정보**에 '연결 다시 설정'·'예전 방식으로 열기'(WEB, `setMode`)·'새 방식으로 열기'(GAS iframe 안 → 껍데기에 `ledger-mode` 메시지) 버튼이 있음. 사파리와 홈 화면 앱은 저장 공간이 따로.
+- `index.html`의 스크립트는 함수로 감쌈(앱 화면의 전역 이름과 충돌 방지). 앱 화면을 바꾸면 사용자는 **두 번째 실행부터** 새 버전을 봄.
 - `text/plain` POST라서 사전 요청(preflight)이 없음. Apps Script는 302 → `script.googleusercontent.com`로 응답을 넘김(브라우저가 따라감). 웹앱은 '모든 사용자' 접근이어야 함.
 - `doPost` 본문에 `fn`이 있으면 앱 API(APP_KEY), 없으면 단축어 입력(INGEST_KEY).
 
