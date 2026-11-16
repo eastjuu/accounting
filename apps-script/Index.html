@@ -21,7 +21,9 @@ var WEB = !(window.google && google.script && google.script.run);
 var CFG = null;
 if (WEB) {
   try { CFG = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); } catch (e) {}
-  if (!(CFG && CFG.url && CFG.key) && location.protocol === 'https:') location.replace('../index.html');
+  // 첫 화면(index.html)이 이 파일을 불러와 같은 주소에 그려요(주소 이동 없음 → 홈 화면 앱 밖으로 안 나감).
+  // 이 파일 주소로 직접 열었는데 설정이 없을 때만 첫 화면으로 보내요.
+  if (!(CFG && CFG.url && CFG.key) && location.protocol === 'https:') location.replace(/\/apps-script\//.test(location.pathname) ? '../' : './');
   document.documentElement.classList.add('web');
 }
 </script>
@@ -701,7 +703,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16e';
+const APP_VER = '2026.11.16f';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -1932,9 +1934,9 @@ function moreView() {
     sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
       (S.demo ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
       row1('', '앱 버전', '', APP_VER + (WEB ? ' · 웹' : ' · 구글')) +
-      (WEB ? '<a class="ios-row act" href="../index.html#reset"><div class="tx"><div class="t1">연결 다시 설정</div><div class="t2">웹앱 주소·비밀키를 다시 입력해요</div></div>' + CHEV + '</a>' +
-        '<a class="ios-row act" href="../index.html#classic"><div class="tx"><div class="t1">예전 방식으로 열기</div><div class="t2">문제가 있을 때 · 구글 화면을 iframe으로 열어요</div></div>' + CHEV + '</a>'
-      : inShell ? '<a class="ios-row act" href="https://eastjuu.github.io/accounting/#web" target="_top"><div class="tx"><div class="t1">새 방식으로 열기</div><div class="t2">GitHub Pages에서 바로 열어 시작이 빨라요</div></div>' + CHEV + '</a>' : ''));
+      (WEB ? '<div class="ios-row act" data-act="conn-reset"><div class="tx"><div class="t1">연결 다시 설정</div><div class="t2">웹앱 주소·비밀키를 다시 입력해요</div></div>' + CHEV + '</div>' +
+        '<div class="ios-row act" data-act="mode-classic"><div class="tx"><div class="t1">예전 방식으로 열기</div><div class="t2">문제가 있을 때 · 구글 화면을 iframe으로 열어요</div></div>' + CHEV + '</div>'
+      : inShell ? '<div class="ios-row act" data-act="mode-web"><div class="tx"><div class="t1">새 방식으로 열기</div><div class="t2">GitHub Pages에서 바로 열어 시작이 빨라요</div></div>' + CHEV + '</div>' : ''));
 }
 function rulesView() {
   const list = S.D.rules.slice().sort((a, b) => a.kw.localeCompare(b.kw, 'ko'));
@@ -2102,6 +2104,8 @@ document.addEventListener('click', (ev) => {
   if (t.dataset.acct) { pushTo('ledger', { account:t.dataset.acct }); return; }
   if (t.dataset.entry) { openEntry(Number(t.dataset.entry)); return; }
   if (t.dataset.act === 'reload') load();
+  if (t.dataset.act === 'conn-reset' || t.dataset.act === 'mode-classic') setMode(t.dataset.act);
+  if (t.dataset.act === 'mode-web') toShell({ type:'ledger-mode', mode:'web' });   // 껍데기가 설정을 바꾸고 새로고침
 });
 document.addEventListener('change', (ev) => {
   const t = ev.target;
@@ -2358,6 +2362,14 @@ function withKey(cb) {
   if (APP_KEY !== null) return cb(APP_KEY);
   if (!(window.google && google.script && google.script.url)) { APP_KEY = ''; return cb(APP_KEY); }
   google.script.url.getLocation((loc) => { APP_KEY = (loc && loc.parameter && loc.parameter.k) || ''; cb(APP_KEY); });
+}
+/* WEB: 연결 초기화 / 예전 방식 전환. 주소를 옮기지 않고 같은 주소를 다시 열어요(홈 화면 앱에서 사파리 막대가 뜨지 않게) */
+function setMode(act) {
+  try {
+    if (act === 'conn-reset') { ['ledger-app-settings', 'ledger-cache-v1', 'ledger-data-cache', 'ledger-app-html'].forEach((k) => localStorage.removeItem(k)); }
+    else { const c = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); if (c) { c.mode = 'classic'; localStorage.setItem('ledger-app-settings', JSON.stringify(c)); } }
+  } catch (e) {}
+  location.replace(location.pathname.replace(/apps-script\/Index\.html$/, ''));
 }
 /* 마지막으로 받은 데이터를 이 기기에 저장해 두고, 다음에 열 때 먼저 보여줘요 */
 const CACHE = 'ledger-cache-v1';
