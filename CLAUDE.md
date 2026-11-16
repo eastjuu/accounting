@@ -100,6 +100,9 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - 홈: `homeView()`, `spend(ym)`(기준일: 오늘 전표가 없으면 어제), `lineChart()`(일별 막대+누적 선), `wcard`, `hcard`, `headline()`/`greetText()`(시간대별 인사말).
 - 불러오기: `homeSkeleton()`/`skeleton()`(틀) → 데이터 오면 `S.reveal`로 차례로 등장 + `runCount()` 숫자 애니메이션.
 - 쓰기 UI: `api()`, `setConfirmUI`, `openForm`/`submitForm`(수정·새 전표·알림→전표), `allBtn`(모두 확인, 두 번 눌러야 실행), `toast`.
+- **저장 즉시 반영(2026-11-16)**: 확인·무효·수정·새 전표는 서버 응답을 기다리지 않음. 확인·무효·수정은 `S.realRaw` 행을 바로 바꾸고(`snap`/`restore`로 되돌림 대비), 새 전표·늘어난 줄은 임시 행 `S.pend`(행 번호 `PEND0`=1000000 이상)로 `build(withPend(raw))`에 섞어 보여줌. 수정 중인 행은 `S.busy` → `e.saving`('저장 중…', 상세에서 버튼 숨김, 밀기·모두 확인 제외).
+  - `enqueue(fn, args, ok, fail)`: 서버 호출을 **순서대로** 보냄(`wq` 프로미스 사슬). 성공 → `applyPatch`(실제 행으로 교체), 실패 → 되돌리고 새 전표·수정은 `openForm`으로 입력값 그대로 다시 엶. 대기 중 `load()`는 `S.reload`로 미뤘다가 다 끝나면 실행, 시작할 때 `S.wv++`로 진행 중 불러오기 결과를 버림.
+  - 설정(규칙·계정) 저장은 예전처럼 기다림(`S.saving`).
 - 무효: `e.void`(목록 필터 '무효'에서만 보임, `valid`·집계·최근 목록 제외), 상세의 "무효 처리"(두 번 눌러야 실행, `S.armV`) / "무효 취소" → `voidUI`.
 - 하단 탭: 홈 / 재무제표(대차 블록 아이콘) / 전표 / 원장 / **전체**(≡). 전체 탭(`moreView`) 아래 `MORE_SUB`: 월별 추이, 수신함, 분류 규칙(`rulesView`), 계정과목(`accountsView`), 정보(`APP_VER`). PC 사이드바엔 '관리' 그룹.
 - 설정 폼: `openRule`(#rf), `openAcct`/`openAcctNew`(#af), 쓰기는 `settingWrite`. 삭제는 두 번 눌러야 실행.
