@@ -34,7 +34,8 @@ const IB = extra ? { id:'IBX', gid:0, rows:[
  [11,'2026-11-04 13:51','입금\n195,123원 이동주 입출금(5929)\n11.04 13:51','보류','','통장을 특정할 수 없음(신한 계좌 2개)'],
  [12,'2026-11-04 13:51','입금\n195,123원 이동주 입출금(5929)\n11.04 13:51','중복','','']]} : undefined;
 const raw = { journal:J, journalGid:1449833504, accounts:A, spreadsheetId:'X', at:'2026-11-04 16:50', inbox:IB, rules: extra ? [['지에스25','식비','미지급금_신용카드','편의점 간식',2],['카카오T','교통비','',' ',3]] : [] };
-const mock = `<script>window.google={script:{run:(function mk(){let s,f;const o={withSuccessHandler(x){s=x;return o},withFailureHandler(x){f=x;return o},getData(){setTimeout(()=>s(JSON.parse(JSON.stringify(${JSON.stringify(raw)}))),50)}};return new Proxy({}, {get(_,k){const n={...o}; let ss,ff; n.withSuccessHandler=(x)=>{ss=x;return n}; n.withFailureHandler=(x)=>{ff=x;return n}; n.getData=()=>setTimeout(()=>ss(JSON.parse(JSON.stringify(${JSON.stringify(raw)}))),50); return n[k];}})})()}};</script>`;
+// 가짜 google.script.run: getData는 위 raw, 쓰기 함수는 window.__mockWrite(이름, 성공, 실패)가 있으면 그걸로 (없으면 빈 응답 → 앱이 전체 다시 불러옴)
+const mock = `<script>window.google={script:{run:new Proxy({},{get(_,k0){let ss=()=>{},ff=()=>{};const n=new Proxy({},{get(_,k){if(k==='withSuccessHandler')return(x)=>{ss=x;return n};if(k==='withFailureHandler')return(x)=>{ff=x;return n};if(k==='getData')return()=>setTimeout(()=>ss(JSON.parse(JSON.stringify(${JSON.stringify(raw)}))),50);return(...a)=>{const w=window.__mockWrite&&window.__mockWrite(k,ss,ff);if(w)w(...a);else setTimeout(()=>ss({}),50);};}});return n[k0];}})}};</script>`;
 fs.writeFileSync('page.html', html.replace('<head>', '<head>' + mock));
 (async () => {
   const b = await chromium.launch();
