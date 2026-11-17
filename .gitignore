@@ -2,3 +2,11 @@ node_modules/
 tools/out/
 .DS_Store
 .clasprc.json
+# iOS 앱 빌드 산출물 (GitHub Actions에서 만들어요)
+ios/Web/
+ios/Generated/
+ios/*.xcodeproj/
+ios/Assets.xcassets/AppIcon.appiconset/*.png
+build/
+Payload/
+*.ipa

@@ -1,0 +1,75 @@
+# iOS 앱(IPA) 빌드: 서명 없이 만들고, 설치 도구(SideStore·AltStore 등)가 내 Apple ID로 서명해서 설치해요.
+# - 작업 브랜치: 빌드만(컴파일 확인) + 결과 파일을 Actions 아티팩트로
+# - main: 위 + GitHub 릴리스 'ios-latest'에 Ledger.ipa 올림 (아이폰에서 바로 받기)
+name: iOS 앱 빌드
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - 'apps-script/Index.html'
+      - 'apps-script/Code.gs'
+      - 'tools/build-ios-web.js'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 도구 설치 (XcodeGen)
+        run: brew install xcodegen
+
+      - name: Xcode·SDK 버전
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: 화면·엔진 만들기
+        run: node tools/build-ios-web.js
+
+      - name: 아이콘 (1024)
+        run: sips -z 1024 1024 icon-512.png --out ios/Assets.xcassets/AppIcon.appiconset/icon-1024.png
+
+      - name: Xcode 프로젝트 만들기
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: 빌드 (서명 없이)
+        run: |
+          xcodebuild -project ios/Ledger.xcodeproj -scheme Ledger -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" -quiet build
+
+      - name: IPA 묶기
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Ledger.app Payload/
+          zip -qry Ledger.ipa Payload
+          ls -la Ledger.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Ledger-ipa
+          path: Ledger.ipa
+
+      - name: 릴리스 올리기 (main만)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-latest -y --cleanup-tag || true
+          gh release create ios-latest Ledger.ipa --prerelease \
+            --title "가계부 iOS 앱 (최신)" \
+            --notes "커밋 ${GITHUB_SHA::7} · $(date -u +%Y-%m-%dT%H:%MZ) · 서명 없는 IPA (SideStore/AltStore로 설치)" \
+            --target "$GITHUB_SHA"

@@ -15,9 +15,12 @@
 <link rel="preconnect" href="https://script.googleusercontent.com">
 <title>가계부</title>
 <script>
-/* 실행 방식: Apps Script 안(google.script.run) 또는 GitHub Pages에서 직접(WEB, fetch로 데이터 API 호출).
+/* 실행 방식: Apps Script 안(google.script.run) 또는 GitHub Pages에서 직접(WEB, fetch로 데이터 API 호출)
+   또는 iOS 앱 안(LOCAL: 앱이 __LEDGER_LOCAL을 넣어 줌, 장부 엔진 engine.js가 같은 화면 안에서 실행).
    WEB인데 연결 설정이 없으면 첫 화면(설정)으로 보내요. */
-var WEB = !(window.google && google.script && google.script.run);
+var LOCAL = !!window.__LEDGER_LOCAL && !!window.LedgerEngine;
+var WEB = !LOCAL && !(window.google && google.script && google.script.run);
+if (LOCAL) document.documentElement.classList.add('web', 'local');
 var CFG = null;
 if (WEB) {
   try { CFG = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); } catch (e) {}
@@ -1630,6 +1633,9 @@ function api(fn, ...args) {
 }
 /* 서버 호출: Apps Script 안이면 google.script.run, GitHub Pages면 fetch로 웹앱 데이터 API(doPost) */
 function call(fn, args) {
+  if (LOCAL) return new Promise((res, rej) => setTimeout(() => {   // 앱 안 장부 엔진 (서버와 같은 함수)
+    try { res(LedgerEngine.call(fn, args)); } catch (e) { rej(e instanceof Error ? e : new Error(String(e))); }
+  }, 0));
   if (WEB) return rpc(fn, args);
   return new Promise((res, rej) => withKey((key) => google.script.run
     .withSuccessHandler(res)
@@ -1971,8 +1977,11 @@ function moreView() {
       row1(' data-go="accounts"', '계정과목', '계정 추가 · 사용중지', D.accounts.length + '개' + (off ? ' (중지 ' + off + ')' : ''))) +
     sec('보여주기', '<label class="ios-row"><div class="tx"><div class="t1">샘플 데이터로 보기</div><div class="t2" style="white-space:normal">다른 사람에게 보여줄 때 · 내 장부는 그대로이고 저장은 막혀요</div></div><input type="checkbox" class="sw" data-act="demo"' + (S.demo ? ' checked' : '') + ' aria-label="샘플 데이터로 보기"></label>') +
     sec('정보', row1('', '마지막 갱신', '', esc(D.at || '-')) +
-      (S.demo ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
-      row1('', '앱 버전', '', APP_VER + (WEB ? ' · 웹' : ' · 구글')) +
+      (S.demo || LOCAL ? '' : '<a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.sid) + '/edit" target="_blank" rel="noopener"><div class="tx"><div class="t1">구글 시트 열기</div></div><span class="val">↗</span></a>') +
+      (LOCAL ? row1('', '데이터 저장 위치', '이 아이폰 · 파일 앱 › 가계부 › ledger.json (날짜별 백업 포함)', '') +
+        '<div class="ios-row act" data-act="backup-share"><div class="tx"><div class="t1">백업 파일 보내기</div><div class="t2">장부 전체를 파일로 저장·공유</div></div>' + CHEV + '</div>' +
+        '<div class="ios-row act" data-act="import-open"><div class="tx"><div class="t1">구글 시트에서 가져오기</div><div class="t2">시트 장부로 앱 장부를 새로 채워요</div></div>' + CHEV + '</div>' : '') +
+      row1('', '앱 버전', '', APP_VER + (LOCAL ? ' · 앱' : WEB ? ' · 웹' : ' · 구글')) +
       (WEB ? '<div class="ios-row act" data-act="conn-reset"><div class="tx"><div class="t1">연결 다시 설정</div><div class="t2">웹앱 주소·비밀키를 다시 입력해요</div></div>' + CHEV + '</div>' +
         '<div class="ios-row act" data-act="mode-classic"><div class="tx"><div class="t1">예전 방식으로 열기</div><div class="t2">문제가 있을 때 · 구글 화면을 iframe으로 열어요</div></div>' + CHEV + '</div>'
       : inShell ? '<div class="ios-row act" data-act="mode-web"><div class="tx"><div class="t1">새 방식으로 열기</div><div class="t2">GitHub Pages에서 바로 열어 시작이 빨라요</div></div>' + CHEV + '</div>' : ''));
@@ -2144,6 +2153,8 @@ document.addEventListener('click', (ev) => {
   if (t.dataset.entry) { openEntry(Number(t.dataset.entry)); return; }
   if (t.dataset.act === 'reload') load();
   if (t.dataset.act === 'conn-reset' || t.dataset.act === 'mode-classic') setMode(t.dataset.act);
+  if (t.dataset.act === 'import-open') openImport();
+  if (t.dataset.act === 'backup-share') toNative({ type:'share' });
   if (t.dataset.act === 'mode-web') toShell({ type:'ledger-mode', mode:'web' });   // 껍데기가 설정을 바꾸고 새로고침
 });
 document.addEventListener('change', (ev) => {
@@ -2436,6 +2447,47 @@ window.addEventListener('message', (ev) => {
     readyOnce();
   } catch (e) {}
 });
+/* ===== iOS 앱(LOCAL) 전용: 앱과 주고받기, 구글 시트에서 가져오기, 단축어 대기열 처리 ===== */
+function toNative(msg) { try { window.webkit.messageHandlers.ledger.postMessage(msg); } catch (e) {} }
+function openImport() {
+  S.form = null;
+  let c = null; try { c = JSON.parse(localStorage.getItem('ledger-app-settings') || 'null'); } catch (e) {}
+  openDrawer('구글 시트에서 가져오기', '<form id="imf" autocomplete="off">' +
+    sec('', fmRow('주소', '<input type="url" name="url" required placeholder="https://script.google.com/…/exec" value="' + esc((c && c.url) || '') + '" autocapitalize="off" spellcheck="false">') +
+      fmRow('키', '<input type="password" name="key" required placeholder="앱 접속 키(makeKey)" value="' + esc((c && c.key) || '') + '" autocapitalize="off" spellcheck="false">')) +
+    '<div class="acts"><button type="submit" class="pbtn ink" id="imSave">가져오기</button><button type="button" class="sbtn" data-wr="cancel">취소</button></div>' +
+    '<p class="fm-note">웹앱(구글 시트)의 장부·계정과목·분류 규칙·수신함을 가져와 <b>앱 장부를 새로 채워요</b>. 앱에서만 입력한 내용은 지워지니, 처음 옮길 때 한 번만 쓰세요. 시트는 바뀌지 않아요.</p></form>');
+}
+document.addEventListener('submit', (ev) => {
+  const f = ev.target;
+  if (f.id !== 'imf') return;
+  ev.preventDefault();
+  const url = f.url.value.trim(), key = f.key.value.trim();
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) { toast('웹앱 주소는 https://script.google.com/ 으로 시작하고 /exec 로 끝나야 해요', true); return; }
+  const btn = $('imSave'); btn.disabled = true; btn.textContent = '가져오는 중…';
+  fetch(url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body:JSON.stringify({ k:key, fn:'getData', args:[] }), redirect:'follow', cache:'no-store' })
+    .then((r) => r.text()).then((t) => {
+      let j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (!j) throw new Error('응답을 읽지 못했어요');
+      if (!j.ok) throw new Error(j.error || '가져오지 못했어요');
+      const n = LedgerEngine.importRaw(j.data);
+      try { localStorage.setItem('ledger-app-settings', JSON.stringify({ url, key })); } catch (e) {}
+      closeEntry(); S.realRaw = null; S.D = null; load();
+      toast('가져왔어요 · 전표 ' + n.journal + '행, 계정 ' + n.accounts + '개, 규칙 ' + n.rules + '개, 알림 ' + n.inbox + '건');
+    })
+    .catch((err) => { btn.disabled = false; btn.textContent = '가져오기'; toast('가져오지 못했어요 · ' + err.message, true); });
+});
+/* 단축어 "가계부에 알림 기록"이 앱 대기열에 넣은 알림을 처리 (앱이 열릴 때 앱이 불러 줘요) */
+window.__ledgerIngest = function (items) {
+  if (!LOCAL || !Array.isArray(items) || !items.length) return;
+  const done = [], made = [];
+  items.forEach((it) => {
+    try { const r = LedgerEngine.ingestText(it.text); done.push(it.id); if (r && r.no) made.push(r.no); }
+    catch (e) { console.error(e); }
+  });
+  toNative({ type:'ingested', ids:done });
+  if (done.length) { load(); toast('알림 ' + done.length + '건을 넣었어요' + (made.length ? ' · 전표 ' + made.join(', ') + '번 자동 분개' : ' · 수신함에서 확인해 주세요')); }
+};
 (function start() {
   if (demoFlag()) { setDemo(true, true); readyOnce(); return; }   // 샘플 모드였으면 실제 데이터는 아예 그리지 않아요
   const c = cacheRead();
@@ -2444,6 +2496,7 @@ window.addEventListener('message', (ev) => {
   if (S.D || !inShell) readyOnce();      // 이 기기에 저장된 데이터로 바로 그렸으면 준비 완료
   else toShell({ type:'ledger-hello' }); // 아니면 껍데기에 저장된 데이터를 달라고 해요
   load();
+  if (LOCAL) { toNative({ type:'ready' }); if (LedgerEngine.isEmpty()) setTimeout(openImport, 600); }   // 앱 첫 실행: 시트에서 가져오기 안내
 })();
 </script>
 </body>
