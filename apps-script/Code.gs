@@ -661,11 +661,20 @@ function ingest_(text) {
   const tz = ss.getSpreadsheetTimeZone();
   const ish = inboxSheet_(ss);
   const last = ish.getLastRow();
-  const from = Math.max(2, last - 299);   // 최근 300건 안에서 같은 원문 찾기 (단축어 재전송 대비)
-  const dup = last >= 2 && ish.getRange(from, 2, last - from + 1, 1).getDisplayValues().some((r) => String(r[0]).trim() === text);
+  const from = Math.max(2, last - 299);   // 최근 300건 안에서 같은 원문·같은 결제 찾기 (단축어 재전송, 여러 앱의 같은 결제 알림)
+  const recent = last >= 2 ? ish.getRange(from, 2, last - from + 1, 2).getDisplayValues() : [];
   const row = last + 1;
   const put = (st, no, memo) => ish.getRange(row, 1, 1, 5).setValues([[new Date(), text, st, no, memo]]);
-  if (dup) { put('중복', '', '같은 알림이 이미 수신함에 있어요'); return { status: '중복', msg: '이미 받은 알림이에요' }; }
+  if (recent.some((r) => String(r[0]).trim() === text)) { put('중복', '', '같은 알림이 이미 수신함에 있어요'); return { status: '중복', msg: '이미 받은 알림이에요' }; }
+  // 같은 결제를 다른 앱이 다시 알린 경우 (신한카드 앱 + 신한 SOL, 체크카드 승인 + 은행 출금)
+  const same = sameTxn_(text, recent, from);
+  if (same && !(same.kind === '출금' && payKind_(text) === '승인' && !same.status)) {
+    put('중복', '', '같은 결제로 보이는 알림이 이미 있어요(수신함 ' + same.row + '행)');
+    return { status: '중복', msg: '같은 결제 알림이 이미 있어요(수신함 ' + same.row + '행)' };
+  }
+  if (same) {   // 먼저 와서 대기 중인 은행 출금 알림 → 이번 승인 알림을 처리하고 출금 쪽을 중복으로
+    ish.getRange(same.row, 3, 1, 3).setValues([['중복', '', '체크카드 승인 알림(수신함 ' + row + '행)과 같은 거래']]);
+  }
   const sh = ss.getSheetByName('분개장');
   const g = guess_(ss, text, tz, { journal: journalVals_(sh, tz) });
   if (g.why || !g.auto) { const why = g.why || g.hint; put('', '', why); return { status: '대기', msg: why }; }
@@ -685,6 +694,35 @@ function journalVals_(sh, tz) {
 }
 
 /* ----- 알림 원문 읽기 ----- */
+/** 알림 종류: 카드 승인 / 출금 / ''(입금·취소·기타는 같은 결제 비교에서 뺌) */
+function payKind_(text) {
+  const t = String(text || '').replace(/입출금/g, '');   // '입출금(5929)', '입출금알림'은 종류가 아님
+  if (/취소/.test(t)) return '';
+  if (/승인/.test(t)) return '승인';
+  if (/출금/.test(t)) return '출금';
+  return '';
+}
+/** 알림에 적힌 거래 시각 → 월·일·분 숫자 (예: 11/14 13:38, 11.14 9:18, 11/15 12:30:20). 없으면 null */
+function txnTime_(text) {
+  const m = /(\d{1,2})[\/.](\d{1,2})\s+(\d{1,2}):(\d{2})/.exec(String(text || ''));
+  return m ? (Number(m[1]) * 31 + Number(m[2])) * 1440 + Number(m[3]) * 60 + Number(m[4]) : null;
+}
+/** 같은 결제로 보이는 최근 수신함 알림: 금액 같고, 거래 시각 1분 안, 종류가 (승인·승인) 또는 (승인·출금). 중복으로 표시된 줄은 제외 */
+function sameTxn_(text, recent, from) {
+  const k = payKind_(text), tm = txnTime_(text), am = /([\d,]+)\s*원/.exec(text);
+  if (!k || tm === null || !am) return null;
+  const amount = am[1].replace(/,/g, '');
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const t = String(recent[i][0] || ''), st = String(recent[i][1] || '').trim();
+    if (st === '중복') continue;
+    const k2 = payKind_(t);
+    if (!k2 || (k === '출금' && k2 === '출금')) continue;
+    const tm2 = txnTime_(t), am2 = /([\d,]+)\s*원/.exec(t);
+    if (tm2 === null || !am2 || am2[1].replace(/,/g, '') !== amount || Math.abs(tm2 - tm) > 1) continue;
+    return { row: from + i, kind: k2, status: st };
+  }
+  return null;
+}
 /** 가맹점·상대: 신한 '가맹점명:', 현대 체크(금액 줄 다음 줄), 은행 '금액 상대 입출금', 우리 '[출금] 상대 금액' */
 function merchantOf_(text) {
   const t = String(text || '');
