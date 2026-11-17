@@ -135,11 +135,12 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - 껍데기는 `*.googleusercontent.com` / `script.google.com` 출처만 신뢰.
 - 웹앱 주소·키는 껍데기의 localStorage `ledger-app-settings`에만 저장(저장소에 없음). 주소 끝에 `#reset`이면 초기화.
 
-## 아이폰 관련 주의
+## 아이폰 관련 주의 (사용 기기 iOS 27, 2026-11 기준)
 - (예전 방식) 앱(구글 주소 iframe) 안의 저장 공간은 아이폰에서 지워짐 → 캐시는 껍데기 쪽에 둠. WEB 방식은 같은 출처라 해당 없음.
 - 홈 화면 아이콘은 추가할 때 고정됨. 아이콘을 바꾸면 `?v=N`을 올리고 아이콘을 지웠다 다시 추가해야 하고, 그러면 주소·키를 다시 입력해야 함.
 - **껍데기의 시작 화면(`.sp-m`)은 앱 홈의 틀과 위치가 똑같아야 전환이 자연스러움.** 홈 레이아웃(간격, 카드, 상단 버튼)을 바꾸면 `index.html`의 시작 화면과 `homeSkeleton()`도 같이 맞추기.
 - 하단 탭 바: `bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px))`.
+- 화면 맨 위에 닿는 고정 요소(`.scrim` 등)는 안 쓸 때 `visibility:hidden`으로 숨기기: 아이폰 사파리(iOS 26 이후, 사용 기기는 iOS 27)가 그 색으로 상태 표시줄 영역을 칠하는 것으로 보여서, 투명(opacity 0)으로만 두면 위쪽이 어두운 채 남음(2026-11-17).
 - 입력창 글자 크기는 16px 이상(작으면 아이폰이 확대함).
 - 확대 막기(2026-11-16): viewport `maximum-scale=1, user-scalable=no` + `touch-action: manipulation`(두 번 탭) + `gesturestart`·두 손가락 `touchmove` preventDefault(사파리가 viewport를 무시할 때). Index.html head 스크립트와 index.html 양쪽(document.open이 이전 문서의 이벤트를 지우므로 앱 화면에도 따로 있음).
 

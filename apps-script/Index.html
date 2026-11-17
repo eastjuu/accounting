@@ -189,8 +189,9 @@ table.fs{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .warnbox h2{color:var(--warn)}
 
 /* 상세 패널 */
-.scrim{position:fixed;inset:0;background:rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
-.scrim.on{opacity:1;pointer-events:auto}
+/* 닫혀 있을 땐 투명하게만 두지 않고 숨겨요: 아이폰 사파리는 화면 맨 위에 닿은 고정 요소 색으로 상태 표시줄을 칠해서, 투명한 막이 남아 있으면 위쪽이 어두운 채로 남아요 */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.25);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s,visibility 0s .2s;z-index:20}
+.scrim.on{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .2s}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--bg);border-left:1px solid var(--line);transform:translateX(100%);visibility:hidden;transition:transform .22s ease,visibility 0s .22s;z-index:21;display:flex;flex-direction:column}
 .drawer.on{transform:none;visibility:visible;box-shadow:-8px 0 30px rgba(0,0,0,.12);transition:transform .22s ease}
 .dr-h{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line)}
@@ -708,7 +709,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.16h';
+const APP_VER = '2026.11.17a';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
