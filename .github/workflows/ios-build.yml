@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: xcode-27        # Xcode 27 + 공식 iOS 27 SDK (GitHub 러너, 2026-10 정식)
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
