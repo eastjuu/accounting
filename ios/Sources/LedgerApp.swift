@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Combine
 
 /// 가계부 iOS 앱: 화면은 웹과 같은 Index.html, 장부 엔진은 Code.gs를 앱 안에서 실행(engine.js).
 /// 데이터는 이 아이폰의 Documents/ledger.json (파일 앱 › 가계부)에 저장해요.
