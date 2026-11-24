@@ -245,6 +245,7 @@ table.fs{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 .ios-search input{flex:1;min-width:0;border:0;background:none;outline:none;padding:0;font-size:16px;color:var(--fg)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
 .chip{display:inline-flex;align-items:center;border:0;background:var(--panel);border-radius:999px;padding:7px 12px;font-size:13px;color:var(--fg);cursor:pointer}
+.inp{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:9px 12px;outline:none;-webkit-appearance:none;appearance:none}
 .m-hero{background:var(--accent);color:#fff;border-radius:16px;padding:18px 18px 16px;margin:0 0 24px;cursor:pointer}
 .m-hero .l{font-size:13px;opacity:.85}
 .m-hero .v{font-size:32px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:2px}
@@ -712,7 +713,7 @@ const MENU = [
   { g:'관리', items:[['rules','분류 규칙'],['accounts','계정과목']] },
 ];
 const MORE_SUB = ['more', 'monthly', 'inbox', 'rules', 'accounts'];   // 폰 '전체' 탭 아래 화면
-const APP_VER = '2026.11.17a';
+const APP_VER = '2026.11.24a';
 const ALL = MENU.flatMap((m) => m.items);
 const PERIOD_VIEWS = ['bs','is','trial','monthly'];
 /* 하단 탭: [평소, 선택됨(채운 모양)] */
@@ -852,6 +853,29 @@ function inboxView() {
     (list.length ? byDate(list, (x) => x.dk, ibRow) : '<div class="empty">' + (S.ib ? IB_LBL[S.ib] + ' 항목이 없어요' : '수신함이 비어 있어요') + '</div>') +
     '<div class="ios-sec"><div class="ios-list"><a class="ios-row act" href="https://docs.google.com/spreadsheets/d/' + esc(D.inbox.id) + '/edit#gid=' + D.inbox.gid + '" target="_blank" rel="noopener"><div class="tx"><div class="t1">수신함 시트 열기</div></div><span class="val">↗</span></a></div></div>';
 }
+/* 전표 없이 처리: 사유를 고르면 바로 반영 (포인트 결제·광고 → 제외, 이미 입력한 거래 → 중복, 나중에 → 보류) */
+const IB_SKIP = [['제외', '포인트 결제'], ['제외', '거래 아님(광고·안내)'], ['제외', '따로 처리 안 함'], ['중복', '이미 입력한 거래'], ['보류', '나중에 볼게요']];
+function ibSkipPanel(x) {
+  return '<div class="card" style="padding:14px;margin-bottom:24px"><div class="t2" style="margin-bottom:10px">어떤 알림인가요? 고르면 바로 반영돼요</div><div class="chips" style="margin:0 0 12px">' +
+    IB_SKIP.filter(([to]) => !(to === '보류' && x.kind === 'hold')).map(([to, why]) => '<button class="chip" style="background:var(--bg)" data-wr="ibset" data-to="' + to + '" data-why="' + esc(why) + '" data-ibr="' + x.row + '">' + esc(why) + '</button>').join('') +
+    '</div><div style="display:flex;gap:8px"><input id="ibWhy" class="inp" style="flex:1;min-width:0" maxlength="200" placeholder="직접 사유 입력 (선택)"><button class="sbtn" style="flex:none" data-wr="ibset" data-to="제외" data-ibr="' + x.row + '">제외</button></div></div>';
+}
+function ibWrite(row, to, why) {
+  if (demoBlock()) return;
+  const x = S.D.inbox && S.D.inbox.items.find((i) => i.row === row);
+  const rows = S.realRaw && S.realRaw.inbox && S.realRaw.inbox.rows;
+  const i = rows ? rows.findIndex((r) => r[0] === row) : -1;
+  if (!x || i < 0) return;
+  const before = rows[i].slice(), r = rows[i].slice(), memo = txt(r[5]);
+  const add = to === '대기' ? '앱에서 대기로 되돌림' : (to === '제외' ? '앱에서 제외' : to === '중복' ? '앱에서 중복 표시' : '앱에서 보류') + (why ? ': ' + why : '');
+  r[3] = to === '제외' ? '처리됨' : to === '대기' ? '' : to; r[5] = (memo ? memo + ' / ' : '') + add;
+  rows[i] = r;
+  S.ibSkip = 0; closeEntry(); rebuild(); render();
+  const done = { '제외':'전표 없이 처리했어요', '중복':'중복으로 표시했어요', '보류':'보류했어요', '대기':'대기로 되돌렸어요' }[to];
+  enqueue('setInbox', [row, x.text, to, why || ''],
+    (res) => { applyPatch(res); toast(done); },
+    (err) => { const j = rows.findIndex((q) => q[0] === row); if (j >= 0) rows[j] = before; rebuild(); render(); toast('저장하지 못했어요 · ' + err.message, true); });
+}
 function openInbox(row) {
   const x = S.D.inbox && S.D.inbox.items.find((i) => i.row === row);
   if (!x) return;
@@ -862,7 +886,9 @@ function openInbox(row) {
   $('drBody').innerHTML =
     '<div class="dt-hero"><div class="dt-amt">' + (x.amount != null ? fmt(x.amount) + '<small>원</small>' : '알림') + '</div><div class="dt-t">' + esc(x.title) + '</div><div class="dt-s">' + esc(x.at) + ' 수신 · ' + ibTag(x) + '</div></div>' +
     (x.kind === 'hold' && x.memo ? '<div class="card warnbox" style="padding:12px 14px;margin-bottom:24px"><b style="color:var(--warn)">보류 사유</b><div style="margin-top:4px">' + esc(x.memo) + '</div></div>' : '') +
-    (x.kind === 'wait' || x.kind === 'hold' ? '<div class="acts"><button class="pbtn" data-wr="mkentry" data-ibr="' + x.row + '">전표로 만들기</button></div>' : '') +
+    (x.kind === 'wait' || x.kind === 'hold' ? '<div class="acts"><button class="pbtn" data-wr="mkentry" data-ibr="' + x.row + '">전표로 만들기</button><button class="sbtn" data-wr="ibskip" data-ibr="' + x.row + '">전표 없이 처리</button></div>' +
+      (S.ibSkip === x.row ? ibSkipPanel(x) : '') : '') +
+    (!x.nos.length && (x.kind === 'done' || x.kind === 'dup' || x.kind === 'hold') ? '<div class="acts"><button class="sbtn" data-wr="ibset" data-to="대기" data-ibr="' + x.row + '">대기로 되돌리기</button></div>' : '') +
     ((x.kind === 'wait' || x.kind === 'hold') && x.sug && (x.sug.debit || x.sug.credit) ? sec('추천 분개', vrow('차변', esc(x.sug.debit || '-')) + vrow('대변', esc(x.sug.credit || '-')) + (x.sug.basis ? '<div class="ios-row static"><div class="tx"><div class="t2" style="white-space:normal">' + esc(x.sug.basis) + ' · 전표로 만들기에 미리 채워져요</div></div></div>' : '')) : '') +
     sec('알림 원문', '<div class="ios-row static"><div class="ib-raw sel">' + esc(x.text) + '</div></div>') +
     (entries.length ? sec('입력된 전표', entries.map(jrow).join('')) : x.nos.length ? sec('입력된 전표', vrow('전표 번호', esc(x.nos.join(', ')))) : '') +
@@ -1189,7 +1215,8 @@ function build(raw) {
     inbox = { id:raw.inbox.id, gid:raw.inbox.gid, id2:raw.inbox.id2, gid2:raw.inbox.gid2, items:raw.inbox.rows.filter((r) => txt(r[1]) || txt(r[2])).map((r) => {
       const at = txt(r[1]), st = txt(r[3]), body = txt(r[2]);
       const amt = /([\d,]+)\s*원/.exec(body), shop = /가맹점명\s*[:：]\s*([^\n]+)/.exec(body);
-      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st || '처리 대기', kind:kindOf(st), nos:txt(r[4]).split(/[,\s]+/).filter(Boolean), memo:txt(r[5]), sug:r[6] && typeof r[6] === 'object' ? r[6] : null,
+      const nos = txt(r[4]).split(/[,\s]+/).filter(Boolean);
+      return { row:Number(r[0]), at, dk:dkey(at), text:body, status:st === '처리됨' && !nos.length ? '제외' : st || '처리 대기', kind:kindOf(st), nos, memo:txt(r[5]), sug:r[6] && typeof r[6] === 'object' ? r[6] : null,
         amount:amt ? num(amt[1]) : null, title:shop ? shop[1].trim() : ibTitle(body) };
     }).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : b.row - a.row)) };
   }
@@ -1944,6 +1971,8 @@ function onWrite(t) {
   else if (w === 'addline') jlAdd();
   else if (w === 'delline') jlDel(t);
   else if (w === 'mkentry') entryFromInbox(Number(t.dataset.ibr));
+  else if (w === 'ibskip') { const r = Number(t.dataset.ibr); S.ibSkip = S.ibSkip === r ? 0 : r; openInbox(r); }
+  else if (w === 'ibset') { const inp = $('ibWhy'); const why = t.dataset.why || (inp ? inp.value.trim() : ''); ibWrite(Number(t.dataset.ibr), t.dataset.to, why); }
   else if (w === 'new') openForm('new', { v:{ date:todayIso(), debit:'', credit:'', amount:0, memo:'', note:'', confirm:'확인' } });
   else if (w === 'cancel') { const F = S.form; if (F && /^(rule|acct)/.test(F.mode)) closeEntry(); else if (F && F.mode === 'edit') openEntry(F.row); else if (F && F.ib) openInbox(F.ib.row); else closeEntry(); }
   else if (w === 'confirmall') {

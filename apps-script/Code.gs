@@ -452,6 +452,39 @@ function addEntry(key, f, ib) {
 }
 
 /**
+ * 수신함 알림 상태만 바꿔요(전표 없이). 앱의 알림 상세 화면에서 써요.
+ * to: '제외'(전표 없이 끝냄 → 처리됨, 예: 포인트 결제·광고) | '중복'(이미 입력한 거래) | '보류' | '대기'(되돌리기: 전표가 연결되지 않은 알림만)
+ * text: 앱이 알고 있는 알림 원문 — 시트의 그 행과 다르면 거부(행이 밀렸을 때 엉뚱한 알림을 바꾸지 않게)
+ */
+function setInbox(key, id, text, to, reason) {
+  if (!checkKey_(key)) throw new Error('접속 키가 맞지 않아요.');
+  if (['제외', '중복', '보류', '대기'].indexOf(to) < 0) throw new Error('바꿀 상태가 이상해요: ' + to);
+  reason = String(reason || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  return withLock_(() => {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const ref = inboxRef_(ss, id);
+    const cur = ref.sh.getRange(ref.row, 2, 1, 4).getDisplayValues()[0];   // B 원문, C 상태, D 전표번호, E 메모
+    if (String(cur[0]).trim() !== String(text || '').trim()) throw new Error('수신함 행이 바뀌었어요. 새로고침 후 다시 시도해 주세요.');
+    const st = String(cur[1]).trim(), nos = String(cur[2]).trim(), memo = String(cur[3]).trim();
+    let nst, add;
+    if (to === '대기') {
+      if (nos) throw new Error('전표가 연결된 알림은 되돌릴 수 없어요. 전표를 무효 처리해 주세요.');
+      if (!st) throw new Error('이미 대기 중인 알림이에요.');
+      nst = ''; add = '앱에서 대기로 되돌림';
+    } else {
+      if (st === '처리됨' || nos) throw new Error('이미 처리된 알림이에요. 새로고침해 주세요.');
+      if (st === to) throw new Error('이미 ' + to + ' 상태예요.');
+      nst = to === '제외' ? '처리됨' : to;
+      add = (to === '제외' ? '앱에서 제외' : to === '중복' ? '앱에서 중복 표시' : '앱에서 보류') + (reason ? ': ' + reason : '');
+    }
+    const nmemo = (memo ? memo + ' / ' : '') + add;
+    ref.sh.getRange(ref.row, 3, 1, 3).setValues([[nst, nos, nmemo]]);
+    log_(ss, '수신함 상태 (' + (ref.id < 0 ? '시트 ' : '') + ref.row + '행)', '', { status: st, memo: memo }, { status: nst, memo: nmemo });
+    return { inbox: [inboxOut_(ref)] };
+  });
+}
+
+/**
  * 분개장 마지막 데이터 행(B~F 기준) 아래에 전표를 써요. 잠금 안에서만 불러요.
  * A열 자동번호·G~J 수식은 그대로 두고 B~F, K, L만 써요. 돌려주는 값: {row, no, rows}
  */
@@ -514,7 +547,7 @@ function makeKey() {
  */
 function api_(p) {
   const FNS = { getData: getData, setConfirm: setConfirm, updateEntry: updateEntry, voidEntry: voidEntry, addEntry: addEntry, saveVoucher: saveVoucher,
-    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse,
+    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse, setInbox: setInbox,
     taskInbox: taskInbox, taskApply: taskApply };
   const f = Object.prototype.hasOwnProperty.call(FNS, p.fn) ? FNS[p.fn] : null;
   if (!f) return { ok: false, error: '알 수 없는 요청이에요: ' + p.fn };
