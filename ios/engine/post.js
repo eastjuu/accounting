@@ -3,7 +3,7 @@
 
   /* ---------- 앱에 내보내는 함수 ---------- */
   var FNS = { getData: getData, setConfirm: setConfirm, updateEntry: updateEntry, voidEntry: voidEntry, addEntry: addEntry, saveVoucher: saveVoucher,
-    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse };
+    saveRule: saveRule, deleteRule: deleteRule, addAccount: addAccount, setAccountUse: setAccountUse, setInbox: setInbox };
   function persist() {
     try { if (G.webkit && G.webkit.messageHandlers && G.webkit.messageHandlers.ledger) G.webkit.messageHandlers.ledger.postMessage({ type: 'save', data: serialize() }); } catch (e) {}
   }

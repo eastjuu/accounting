@@ -81,6 +81,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
   - `addEntry(key, f, ib?)` — 마지막 데이터 행 아래에 B~F, K, L(`writeEntry_`→`writeEntries_`, 자동 입력과 공용). 수신함 행이면 `처리됨`(`ib.row` 음수면 가계부 안 수신함), `f.rule {keyword, desc}`가 있으면 분류규칙(기본 적요 포함) 저장
   - 필드 이름: `f.memo` = 적요(F), `f.note` = 메모(L). `header_()`가 L1/분류규칙 F1 제목이 비어 있으면 채움
   - `checkRow_` — 앱이 아는 행과 시트의 전표번호가 같은지 확인(행이 밀렸으면 거부). `clean_` — 입력값 검사
+- `setInbox(key, id, text, to, reason)` — 수신함 알림 상태만 바꿈(전표 없이). to: `제외`(C=`처리됨`, D 빈칸 → 앱에 '제외'로 표시, 예: 포인트 결제·광고) / `중복` / `보류` / `대기`(되돌리기, 전표가 연결 안 된 알림만). 원문(text)이 시트 행과 다르면 거부. E 메모 뒤에 `앱에서 제외: 사유` 등을 덧붙이고 변경이력 `수신함 상태`.
 - 설정(모두 잠금 + 변경이력): `saveRule(key, {row?, kw?, keyword, debit, credit, desc})`, `deleteRule(key, row, kw)`(행의 키워드가 같을 때만), `addAccount(key, {type, code, name, fsg})`(맨 아래 추가, 코드·이름 중복·범위 검사), `setAccountUse(key, code, name, on)`(G열). `readRules_`는 각 규칙의 시트 행을 5번째 값으로 돌려줌.
 - `makeKey()` — 접속 키 재발급.
 - **분류(`guess_`) = 서버 한 곳 기준**: ① 분류규칙(가장 긴 키워드) ② **과거 전표 학습**: `merchantOf_`(가맹점명/현대 체크 금액 다음 줄/은행 '금액 상대 입출금'/우리 '[출금] 상대')로 같은 가맹점 최근 전표(무효·여러 줄 제외, 최대 3건)의 차변, `channelOf_`(승인 알림 첫 줄 = 결제 수단)로 같은 결제 수단 최근 전표의 대변 ③ 대변 빈 신용카드 승인은 첫 카드 부채(체크카드 제외). **자동 분개는 규칙이 맞거나, 승인 알림 + 같은 가맹점 최근 2건 이상 같은 차변일 때만**. 나머지는 `hint`(추천)만. 은행 입출금 알림은 학습 자동 분개 안 함(체크카드 이중 알림 방지).
@@ -103,6 +104,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 - **저장 즉시 반영(2026-11-16)**: 확인·무효·수정·새 전표는 서버 응답을 기다리지 않음. 확인·무효·수정은 `S.realRaw` 행을 바로 바꾸고(`snap`/`restore`로 되돌림 대비), 새 전표·늘어난 줄은 임시 행 `S.pend`(행 번호 `PEND0`=1000000 이상)로 `build(withPend(raw))`에 섞어 보여줌. 수정 중인 행은 `S.busy` → `e.saving`('저장 중…', 상세에서 버튼 숨김, 밀기·모두 확인 제외).
   - `enqueue(fn, args, ok, fail)`: 서버 호출을 **순서대로** 보냄(`wq` 프로미스 사슬). 성공 → `applyPatch`(실제 행으로 교체), 실패 → 되돌리고 새 전표·수정은 `openForm`으로 입력값 그대로 다시 엶. 대기 중 `load()`는 `S.reload`로 미뤘다가 다 끝나면 실행, 시작할 때 `S.wv++`로 진행 중 불러오기 결과를 버림.
   - 설정(규칙·계정) 저장은 예전처럼 기다림(`S.saving`).
+- 수신함 상세: 대기·보류 알림에 '전표로 만들기' + **'전표 없이 처리'**(사유 칩: 포인트 결제·거래 아님·따로 처리 안 함 → 제외, 이미 입력한 거래 → 중복, 나중에 → 보류, 직접 사유 입력). 전표 없는 처리됨·중복·보류엔 '대기로 되돌리기'. `ibWrite`가 즉시 반영 후 `enqueue('setInbox')`.
 - 무효: `e.void`(목록 필터 '무효'에서만 보임, `valid`·집계·최근 목록 제외), 상세의 "무효 처리"(두 번 눌러야 실행, `S.armV`) / "무효 취소" → `voidUI`.
 - 하단 탭: 홈 / 재무제표(대차 블록 아이콘) / 전표 / 원장 / **전체**(≡). 전체 탭(`moreView`) 아래 `MORE_SUB`: 월별 추이, 수신함, 분류 규칙(`rulesView`), 계정과목(`accountsView`), 정보(`APP_VER`). PC 사이드바엔 '관리' 그룹.
 - 설정 폼: `openRule`(#rf), `openAcct`/`openAcctNew`(#af), 쓰기는 `settingWrite`. 삭제는 두 번 눌러야 실행.
@@ -114,7 +116,7 @@ A 타임스탬프 / B 알림 원문 / C 처리상태(빈칸=대기, 처리됨, �
 | | **WEB (기본)** | **GAS (예전·#classic)** |
 |---|---|---|
 | 화면 | `index.html`이 `apps-script/Index.html`을 받아 **주소 이동 없이** 같은 페이지에 그림(`document.open/write`). 받은 파일은 localStorage `ledger-app-html`에 두고 다음 실행부터 즉시 그림, 새 버전은 뒤에서 받아 **다음 실행부터** 반영 | `index.html` 안 iframe에 Apps Script 웹앱 화면 |
-| 데이터 | `call()` → `rpc()`: `fetch(웹앱 주소, POST, Content-Type text/plain, {k, fn, args})` → 서버 `doPost` → `api_`(허용 목록: getData·setConfirm·updateEntry·voidEntry·addEntry·saveVoucher·saveRule·deleteRule·addAccount·setAccountUse) → `{ok, data}` / `{ok:false, error}` | `google.script.run` |
+| 데이터 | `call()` → `rpc()`: `fetch(웹앱 주소, POST, Content-Type text/plain, {k, fn, args})` → 서버 `doPost` → `api_`(허용 목록: getData·setConfirm·updateEntry·voidEntry·addEntry·saveVoucher·saveRule·deleteRule·addAccount·setAccountUse·setInbox) → `{ok, data}` / `{ok:false, error}` | `google.script.run` |
 | 판별 | head 스크립트 `WEB = !google.script.run`, 설정 `CFG` = localStorage `ledger-app-settings` {url, key, mode}. 설정 없으면 `../index.html`로 | |
 | 캐시 | 같은 출처 localStorage `ledger-cache-v1` (없으면 예전 껍데기 캐시 `ledger-data-cache`) | 앱 localStorage + 껍데기에 postMessage |
 | 상단 | `html.web body{padding-top:env(safe-area-inset-top)}` (예전 iframe 위치와 같게) | 껍데기 iframe이 상태 표시줄 아래 |
